@@ -145,7 +145,9 @@ class YoloObbApp:
         tk.Label(ctrl, text="--- Nawigacja Tła ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
         self.lbl_bg_info = tk.Label(ctrl, text="Tło: 0/0", bg="#dddddd")
         self.lbl_bg_info.pack()
-        tk.Button(ctrl, text="Następne Tło ->", command=self.next_bg, bg="#e0e0e0").pack(fill=tk.X, pady=5)
+        
+        # Added skip button
+        tk.Button(ctrl, text="Pomiń Tło (Bez zapisu) ->", command=self.skip_bg, bg="#ff9999").pack(fill=tk.X, pady=5)
 
         tk.Label(ctrl, text="--- Parametry Panelu ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
         
@@ -227,6 +229,11 @@ class YoloObbApp:
         if not self.bg_images: return
         self.current_bg_idx = (self.current_bg_idx + 1) % len(self.bg_images)
         self.load_current_bg()
+        
+    def skip_bg(self):
+        """Skips current background without saving any data."""
+        self.lbl_status.config(text="Pominięto tło.")
+        self.next_bg()
 
     def check_ready_state(self):
         if self.base_img and self.panel_images:
@@ -302,7 +309,14 @@ class YoloObbApp:
         self.root.update()
         
         try:
-            # Loop through EVERY panel in the loaded folder
+            # --- 1. Zapis pustego tła (Negative Sample) ---
+            empty_base_name = f"bg{self.current_bg_idx}_empty_{uuid.uuid4().hex[:4]}"
+            self.base_img.convert("RGB").save(os.path.join(IMG_DIR, f"{empty_base_name}.jpg"))
+            
+            # Tworzenie pustego pliku txt
+            open(os.path.join(LBL_DIR, f"{empty_base_name}.txt"), "w").close() 
+
+            # --- 2. Zapis wariantów paneli ---
             for p_idx, panel_path in enumerate(self.panel_images):
                 panel_img = Image.open(panel_path).convert("RGBA")
                 out_img = self.base_img.copy() # Start with a clean background
@@ -334,9 +348,10 @@ class YoloObbApp:
                 # Generate augmented variants
                 generate_dataset_variants(out_img, labels_obb, base_name)
                 
-            messagebox.showinfo("Sukces", f"Wygenerowano warianty dla {len(self.panel_images)} paneli!")
-            self.reset_canvas()
-            self.lbl_status.config(text="Gotowe.")
+            self.lbl_status.config(text="Zapisano pomyślnie. Ładowanie kolejnego tła...")
+            
+            # --- 3. Auto-przejście do następnego obrazka ---
+            self.root.after(500, self.next_bg) # Opcjonalne opóźnienie, żeby status był widoczny
             
         except Exception as e:
             messagebox.showerror("Błąd", str(e))
@@ -345,4 +360,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = YoloObbApp(root)
     root.mainloop()
-    

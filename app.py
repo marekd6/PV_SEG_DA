@@ -151,10 +151,11 @@ class YoloObbApp:
 
         tk.Label(ctrl, text="--- Parametry Panelu ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
         
-        tk.Label(ctrl, text="Skala", bg="#dddddd").pack(anchor="w")
-        self.s_scale = tk.Scale(ctrl, from_=10, to=200, orient="horizontal", bg="#dddddd")
-        self.s_scale.set(100)
-        self.s_scale.pack(fill=tk.X)
+        # Zmieniono ze "Skali (%)" na "Rozmiar w Pikselach" z limitem 30-100
+        tk.Label(ctrl, text="Rozmiar Panelu (max px)", bg="#dddddd").pack(anchor="w")
+        self.s_size = tk.Scale(ctrl, from_=30, to=100, orient="horizontal", bg="#dddddd")
+        self.s_size.set(60)
+        self.s_size.pack(fill=tk.X)
 
         tk.Label(ctrl, text="Obrót", bg="#dddddd", fg="red").pack(anchor="w")
         self.s_rot = tk.Scale(ctrl, from_=-180, to=180, orient="horizontal", bg="#dddddd")
@@ -190,7 +191,7 @@ class YoloObbApp:
         self.canvas.bind("<Motion>", self.on_move)
 
     def reset_sliders(self):
-        self.s_scale.set(100)
+        self.s_size.set(60)
         self.s_rot.set(0)
         self.s_bright.set(1.0)
         self.s_noise.set(0)
@@ -247,11 +248,15 @@ class YoloObbApp:
             self.placements = []
             self.redraw()
 
-    def apply_transform(self, img, scale_pct, rot, bright, noise):
-        """Applies transformations to a panel image and returns the result + base dimensions."""
-        scale = scale_pct / 100.0
-        base_w = int(img.width * scale)
-        base_h = int(img.height * scale)
+    def apply_transform(self, img, target_size, rot, bright, noise):
+        """Skaluje obraz tak, aby jego najdłuższy bok był równy target_size px"""
+        # Obliczanie matematycznej proporcji skalowania
+        max_dim = max(img.width, img.height)
+        if max_dim == 0: max_dim = 1
+        scale = target_size / max_dim
+        
+        base_w = max(1, int(img.width * scale))
+        base_h = max(1, int(img.height * scale))
         res = img.resize((base_w, base_h), Image.Resampling.LANCZOS)
         
         if bright != 1.0: res = ImageEnhance.Brightness(res).enhance(bright)
@@ -265,7 +270,7 @@ class YoloObbApp:
         
         processed_ov, _, _ = self.apply_transform(
             self.preview_panel_img, 
-            self.s_scale.get(), self.s_rot.get(), 
+            self.s_size.get(), self.s_rot.get(), 
             self.s_bright.get(), self.s_noise.get()
         )
         self.tk_preview = ImageTk.PhotoImage(processed_ov)
@@ -276,14 +281,14 @@ class YoloObbApp:
     def on_click(self, event):
         if not self.work_img or not self.preview_panel_img: return
         
-        scale, rot = self.s_scale.get(), self.s_rot.get()
+        target_size, rot = self.s_size.get(), self.s_rot.get()
         bright, noise = self.s_bright.get(), self.s_noise.get()
         cx, cy = event.x, event.y
         
         # Save the placement logic for the batch processing
         self.placements.append({
             'cx': cx, 'cy': cy, 
-            'scale': scale, 'rot': rot, 
+            'target_size': target_size, 'rot': rot, 
             'bright': bright, 'noise': noise
         })
 
@@ -311,14 +316,14 @@ class YoloObbApp:
         self.root.update()
         
         try:
-            # --- 1. Zapis pustego tła (Negative Sample) ---
+            # 1. Zapis pustego tła (Negative Sample)
             empty_base_name = f"bg{self.current_bg_idx}_empty_{uuid.uuid4().hex[:4]}"
             self.base_img.convert("RGB").save(os.path.join(IMG_DIR, f"{empty_base_name}.jpg"))
             
             # Tworzenie pustego pliku txt
             open(os.path.join(LBL_DIR, f"{empty_base_name}.txt"), "w").close() 
 
-            # --- 2. Zapis wariantów paneli ---
+            # 2. Zapis wariantów paneli
             for p_idx, panel_path in enumerate(self.panel_images):
                 panel_img = Image.open(panel_path).convert("RGBA")
                 out_img = self.base_img.copy() # Start with a clean background
@@ -327,7 +332,7 @@ class YoloObbApp:
                 # Apply all saved placements to THIS specific panel
                 for p in self.placements:
                     img_rot, bw, bh = self.apply_transform(
-                        panel_img, p['scale'], p['rot'], p['bright'], p['noise']
+                        panel_img, p['target_size'], p['rot'], p['bright'], p['noise']
                     )
                     pw, ph = img_rot.size
                     px, py = int(p['cx'] - pw / 2), int(p['cy'] - ph / 2)

@@ -7,7 +7,7 @@ import uuid
 import math
 import random
 
-OUTPUT_BASE_DIR = "dataset_yolo_obb"
+OUTPUT_BASE_DIR = "dataset_yolo_obb3"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 
@@ -118,6 +118,7 @@ class YoloObbApp:
         self.root.title("YOLOv8 OBB Batch Generator")
         self.root.geometry("1280x800")
 
+        # Folder management
         self.bg_images = []
         self.panel_images = []
         self.current_bg_idx = 0
@@ -126,6 +127,7 @@ class YoloObbApp:
         self.work_img = None
         self.preview_panel_img = None
         
+        # Stores dictionaries of placements: {cx, cy, scale, rot, bright, noise}
         self.placements = [] 
         self.tk_preview = None
 
@@ -144,15 +146,15 @@ class YoloObbApp:
         self.lbl_bg_info = tk.Label(ctrl, text="Tło: 0/0", bg="#dddddd")
         self.lbl_bg_info.pack()
         
+        # Added skip button
         tk.Button(ctrl, text="Pomiń Tło (Bez zapisu) ->", command=self.skip_bg, bg="#ff9999").pack(fill=tk.X, pady=5)
 
         tk.Label(ctrl, text="--- Parametry Panelu ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
         
-        # Zmieniono ze "Skali (%)" na "Rozmiar w Pikselach" z limitem 30-100
-        tk.Label(ctrl, text="Rozmiar Panelu (max px)", bg="#dddddd").pack(anchor="w")
-        self.s_size = tk.Scale(ctrl, from_=30, to=100, orient="horizontal", bg="#dddddd")
-        self.s_size.set(60)
-        self.s_size.pack(fill=tk.X)
+        tk.Label(ctrl, text="Skala", bg="#dddddd").pack(anchor="w")
+        self.s_scale = tk.Scale(ctrl, from_=10, to=200, orient="horizontal", bg="#dddddd")
+        self.s_scale.set(100)
+        self.s_scale.pack(fill=tk.X)
 
         tk.Label(ctrl, text="Obrót", bg="#dddddd", fg="red").pack(anchor="w")
         self.s_rot = tk.Scale(ctrl, from_=-180, to=180, orient="horizontal", bg="#dddddd")
@@ -188,13 +190,14 @@ class YoloObbApp:
         self.canvas.bind("<Motion>", self.on_move)
 
     def reset_sliders(self):
-        self.s_size.set(60)
+        self.s_scale.set(100)
         self.s_rot.set(0)
         self.s_bright.set(1.0)
         self.s_noise.set(0)
 
     def load_bg_folder(self):
-        folder = filedialog.askdirectory(title="Wybierz folder z tłami")
+        # folder = filedialog.askdirectory(title="Wybierz folder z tłami")
+        folder = 'C:/Users/admin/Desktop/inference_data/Inference_data/mck26'
         if folder:
             self.bg_images = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
             if self.bg_images:
@@ -204,10 +207,12 @@ class YoloObbApp:
                 messagebox.showwarning("Pusto", "Brak obrazów w folderze.")
 
     def load_panel_folder(self):
-        folder = filedialog.askdirectory(title="Wybierz folder z panelami")
+        # folder = filedialog.askdirectory(title="Wybierz folder z panelami")
+        folder = './pvs'
         if folder:
             self.panel_images = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
             if self.panel_images:
+                # Load the first panel just for the visual preview cursor
                 self.preview_panel_img = Image.open(self.panel_images[0]).convert("RGBA")
                 self.lbl_status.config(text=f"Wczytano {len(self.panel_images)} paneli")
                 self.check_ready_state()
@@ -228,6 +233,7 @@ class YoloObbApp:
         self.load_current_bg()
         
     def skip_bg(self):
+        """Skips current background without saving any data."""
         self.lbl_status.config(text="Pominięto tło.")
         self.next_bg()
 
@@ -241,15 +247,11 @@ class YoloObbApp:
             self.placements = []
             self.redraw()
 
-    def apply_transform(self, img, target_size, rot, bright, noise):
-        """Skaluje obraz tak, aby jego najdłuższy bok był równy target_size px"""
-        # Obliczanie matematycznej proporcji skalowania
-        max_dim = max(img.width, img.height)
-        if max_dim == 0: max_dim = 1
-        scale = target_size / max_dim
-        
-        base_w = max(1, int(img.width * scale))
-        base_h = max(1, int(img.height * scale))
+    def apply_transform(self, img, scale_pct, rot, bright, noise):
+        """Applies transformations to a panel image and returns the result + base dimensions."""
+        scale = scale_pct / 100.0
+        base_w = int(img.width * scale)
+        base_h = int(img.height * scale)
         res = img.resize((base_w, base_h), Image.Resampling.LANCZOS)
         
         if bright != 1.0: res = ImageEnhance.Brightness(res).enhance(bright)
@@ -263,7 +265,7 @@ class YoloObbApp:
         
         processed_ov, _, _ = self.apply_transform(
             self.preview_panel_img, 
-            self.s_size.get(), self.s_rot.get(), 
+            self.s_scale.get(), self.s_rot.get(), 
             self.s_bright.get(), self.s_noise.get()
         )
         self.tk_preview = ImageTk.PhotoImage(processed_ov)
@@ -274,17 +276,19 @@ class YoloObbApp:
     def on_click(self, event):
         if not self.work_img or not self.preview_panel_img: return
         
-        target_size, rot = self.s_size.get(), self.s_rot.get()
+        scale, rot = self.s_scale.get(), self.s_rot.get()
         bright, noise = self.s_bright.get(), self.s_noise.get()
         cx, cy = event.x, event.y
         
+        # Save the placement logic for the batch processing
         self.placements.append({
             'cx': cx, 'cy': cy, 
-            'target_size': target_size, 'rot': rot, 
+            'scale': scale, 'rot': rot, 
             'bright': bright, 'noise': noise
         })
 
-        img_rotated, _, _ = self.apply_transform(self.preview_panel_img, target_size, rot, bright, noise)
+        # Visually apply it to the working canvas using the preview image
+        img_rotated, _, _ = self.apply_transform(self.preview_panel_img, scale, rot, bright, noise)
         paste_w, paste_h = img_rotated.size
         paste_x, paste_y = int(cx - paste_w / 2), int(cy - paste_h / 2)
         
@@ -307,20 +311,23 @@ class YoloObbApp:
         self.root.update()
         
         try:
-            # 1. Zapis pustego tła (Negative Sample)
+            # --- 1. Zapis pustego tła (Negative Sample) ---
             empty_base_name = f"bg{self.current_bg_idx}_empty_{uuid.uuid4().hex[:4]}"
             self.base_img.convert("RGB").save(os.path.join(IMG_DIR, f"{empty_base_name}.jpg"))
+            
+            # Tworzenie pustego pliku txt
             open(os.path.join(LBL_DIR, f"{empty_base_name}.txt"), "w").close() 
 
-            # 2. Zapis wariantów paneli
+            # --- 2. Zapis wariantów paneli ---
             for p_idx, panel_path in enumerate(self.panel_images):
                 panel_img = Image.open(panel_path).convert("RGBA")
-                out_img = self.base_img.copy() 
+                out_img = self.base_img.copy() # Start with a clean background
                 labels_obb = []
                 
+                # Apply all saved placements to THIS specific panel
                 for p in self.placements:
                     img_rot, bw, bh = self.apply_transform(
-                        panel_img, p['target_size'], p['rot'], p['bright'], p['noise']
+                        panel_img, p['scale'], p['rot'], p['bright'], p['noise']
                     )
                     pw, ph = img_rot.size
                     px, py = int(p['cx'] - pw / 2), int(p['cy'] - ph / 2)
@@ -329,22 +336,24 @@ class YoloObbApp:
                     
                     corners = calculate_obb_corners(p['cx'], p['cy'], bw, bh, p['rot'])
                     norm_corners = normalize_obb(corners, out_img.width, out_img.height)
-                    labels_obb.append((0, norm_corners))
+                    labels_obb.append((0, norm_corners)) # Class 0
                 
                 base_name = f"bg{self.current_bg_idx}_pnl{p_idx}_{uuid.uuid4().hex[:4]}"
                 
+                # Save original combo
                 out_img.convert("RGB").save(os.path.join(IMG_DIR, f"{base_name}.jpg"))
                 with open(os.path.join(LBL_DIR, f"{base_name}.txt"), "w") as f:
                     for cls, pts in labels_obb:
                         coords = " ".join([f"{pt[0]:.6f} {pt[1]:.6f}" for pt in pts])
                         f.write(f"{cls} {coords}\n")
                 
+                # Generate augmented variants
                 generate_dataset_variants(out_img, labels_obb, base_name)
                 
             self.lbl_status.config(text="Zapisano pomyślnie. Ładowanie kolejnego tła...")
             
-            # 3. Auto-przejście do następnego obrazka
-            self.root.after(500, self.next_bg) 
+            # --- 3. Auto-przejście do następnego obrazka ---
+            self.root.after(500, self.next_bg) # Opcjonalne opóźnienie, żeby status był widoczny
             
         except Exception as e:
             messagebox.showerror("Błąd", str(e))

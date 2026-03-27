@@ -115,7 +115,7 @@ def generate_dataset_variants(original_img, original_labels_obb, base_name):
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 OBB Batch Generator")
+        self.root.title("YOLOv8 OBB Batch Generator (Auto-Scale)")
         self.root.geometry("1280x800")
 
         # Folder management
@@ -151,11 +151,8 @@ class YoloObbApp:
 
         tk.Label(ctrl, text="--- Parametry Panelu ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
         
-        # Zmieniono ze "Skali (%)" na "Rozmiar w Pikselach" z limitem 30-100
-        tk.Label(ctrl, text="Rozmiar Panelu (max px)", bg="#dddddd").pack(anchor="w")
-        self.s_size = tk.Scale(ctrl, from_=30, to=100, orient="horizontal", bg="#dddddd")
-        self.s_size.set(60)
-        self.s_size.pack(fill=tk.X)
+        # UI update to reflect the automated scaling
+        tk.Label(ctrl, text="Rozmiar Panelu: LOSOWY (30-100px)", bg="#dddddd", fg="#2e7d32", font=("Arial", 9, "bold")).pack(anchor="w", pady=5)
 
         tk.Label(ctrl, text="Obrót", bg="#dddddd", fg="red").pack(anchor="w")
         self.s_rot = tk.Scale(ctrl, from_=-180, to=180, orient="horizontal", bg="#dddddd")
@@ -191,7 +188,6 @@ class YoloObbApp:
         self.canvas.bind("<Motion>", self.on_move)
 
     def reset_sliders(self):
-        self.s_size.set(60)
         self.s_rot.set(0)
         self.s_bright.set(1.0)
         self.s_noise.set(0)
@@ -268,9 +264,10 @@ class YoloObbApp:
     def on_move(self, event):
         if not self.work_img or not self.preview_panel_img: return
         
+        # Hardcoded size 65px just for visual preview while hovering
         processed_ov, _, _ = self.apply_transform(
             self.preview_panel_img, 
-            self.s_size.get(), self.s_rot.get(), 
+            65, self.s_rot.get(), 
             self.s_bright.get(), self.s_noise.get()
         )
         self.tk_preview = ImageTk.PhotoImage(processed_ov)
@@ -281,19 +278,19 @@ class YoloObbApp:
     def on_click(self, event):
         if not self.work_img or not self.preview_panel_img: return
         
-        target_size, rot = self.s_size.get(), self.s_rot.get()
+        rot = self.s_rot.get()
         bright, noise = self.s_bright.get(), self.s_noise.get()
         cx, cy = event.x, event.y
         
-        # Save the placement logic for the batch processing
+        # Don't store the size here anymore, we'll generate it during save_batch
         self.placements.append({
             'cx': cx, 'cy': cy, 
-            'target_size': target_size, 'rot': rot, 
+            'rot': rot, 
             'bright': bright, 'noise': noise
         })
 
-        # Visually apply it to the working canvas using the preview image
-        img_rotated, _, _ = self.apply_transform(self.preview_panel_img, scale, rot, bright, noise)
+        # Draw a placeholder at 65px so the user sees where they clicked
+        img_rotated, _, _ = self.apply_transform(self.preview_panel_img, 65, rot, bright, noise)
         paste_w, paste_h = img_rotated.size
         paste_x, paste_y = int(cx - paste_w / 2), int(cy - paste_h / 2)
         
@@ -331,8 +328,12 @@ class YoloObbApp:
                 
                 # Apply all saved placements to THIS specific panel
                 for p in self.placements:
+                    # ---> THIS IS WHERE THE MAGIC HAPPENS <---
+                    # Generate a random size constraint strictly between 30 and 100 for every panel placement!
+                    auto_random_size = random.randint(30, 100)
+                    
                     img_rot, bw, bh = self.apply_transform(
-                        panel_img, p['target_size'], p['rot'], p['bright'], p['noise']
+                        panel_img, auto_random_size, p['rot'], p['bright'], p['noise']
                     )
                     pw, ph = img_rot.size
                     px, py = int(p['cx'] - pw / 2), int(p['cy'] - ph / 2)
@@ -357,8 +358,8 @@ class YoloObbApp:
                 
             self.lbl_status.config(text="Zapisano pomyślnie. Ładowanie kolejnego tła...")
             
-            # --- 3. Auto-przejście do następnego obrazka ---
-            self.root.after(500, self.next_bg) # Opcjonalne opóźnienie, żeby status był widoczny
+            # 3. Auto-przejście do następnego obrazka
+            self.root.after(500, self.next_bg) 
             
         except Exception as e:
             messagebox.showerror("Błąd", str(e))

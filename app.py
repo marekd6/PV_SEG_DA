@@ -52,53 +52,31 @@ def apply_noise_np(img, intensity=20):
 def generate_dataset_variants(original_img, original_labels_obb, base_name):
     w_img, h_img = original_img.size
     
-    for i in range(1, 4):
+    # Changed to 2 variants since crop was removed
+    for i in range(1, 3):
         img_aug = original_img.copy()
         labels_aug = [(cls, list(pts)) for cls, pts in original_labels_obb]
 
-        # 1. Rotation
-        if i in [1, 3]:
-            angle = random.randint(-15, 15)
-            if angle != 0:
-                img_aug = img_aug.rotate(angle, resample=Image.BICUBIC, expand=False)
-                angle_rad = math.radians(-angle)
-                cx_img, cy_img = w_img / 2, h_img / 2
-                
-                new_labels = []
-                for cls, points in labels_aug:
-                    new_pts = []
-                    for nx, ny in points:
-                        px, py = nx * w_img, ny * h_img
-                        rx, ry = rotate_point(px, py, cx_img, cy_img, angle_rad)
-                        rx = max(0, min(w_img, rx))
-                        ry = max(0, min(h_img, ry))
-                        new_pts.append((rx / w_img, ry / h_img))
-                    new_labels.append((cls, new_pts))
-                labels_aug = new_labels
-
-        # 2. Crop
-        if i in [2, 3]:
-            crop_p = 0.1
-            cx = random.randint(0, int(w_img * crop_p))
-            cy = random.randint(0, int(h_img * crop_p))
-            cw = w_img - cx - random.randint(0, int(w_img * crop_p))
-            ch = h_img - cy - random.randint(0, int(h_img * crop_p))
-            
-            img_aug = img_aug.crop((cx, cy, cx+cw, cy+ch))
+        # 1. Rotation 
+        angle = random.randint(-15, 15)
+        if angle != 0:
+            img_aug = img_aug.rotate(angle, resample=Image.BICUBIC, expand=False)
+            angle_rad = math.radians(-angle)
+            cx_img, cy_img = w_img / 2, h_img / 2
             
             new_labels = []
             for cls, points in labels_aug:
                 new_pts = []
                 for nx, ny in points:
                     px, py = nx * w_img, ny * h_img
-                    npx, npy = px - cx, py - cy
-                    npx = max(0, min(cw, npx))
-                    npy = max(0, min(ch, npy))
-                    new_pts.append((npx / cw, npy / ch))
+                    rx, ry = rotate_point(px, py, cx_img, cy_img, angle_rad)
+                    rx = max(0, min(w_img, rx))
+                    ry = max(0, min(h_img, ry))
+                    new_pts.append((rx / w_img, ry / h_img))
                 new_labels.append((cls, new_pts))
             labels_aug = new_labels
 
-        # 3. Noise
+        # 2. Noise (70% chance)
         if random.random() > 0.3:
             img_aug = apply_noise_np(img_aug, random.randint(10, 40))
 

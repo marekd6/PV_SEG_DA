@@ -7,23 +7,35 @@ import uuid
 import math
 import random
 
-OUTPUT_BASE_DIR = "dataset_yolo_obb3"
+OUTPUT_BASE_DIR = "dataset_yolo_obb5"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 
 os.makedirs(IMG_DIR, exist_ok=True)
 os.makedirs(LBL_DIR, exist_ok=True)
 
-def calculate_obb_corners(cx, cy, w, h, angle_deg):
+def calculate_obb_corners(cx, cy, w, h, angle_deg, shear_x=0.0, shear_y=0.0):
+    """
+    Calculates OBB corners incorporating both shearing and rotation.
+    w, h are the base dimensions BEFORE shearing and rotation.
+    """
     angle_rad = math.radians(-angle_deg) 
     dw, dh = w / 2, h / 2
     
+    # Local corners relative to the center before any transformation
     corners_local = [(-dw, -dh), (dw, -dh), (dw, dh), (-dw, dh)]
     
     rotated_corners = []
     for x, y in corners_local:
-        rx = x * math.cos(angle_rad) - y * math.sin(angle_rad)
-        ry = x * math.sin(angle_rad) + y * math.cos(angle_rad)
+        # 1. Apply Shear mapping
+        sx = x + shear_x * y
+        sy = y + shear_y * x
+        
+        # 2. Apply Rotation mapping
+        rx = sx * math.cos(angle_rad) - sy * math.sin(angle_rad)
+        ry = sx * math.sin(angle_rad) + sy * math.cos(angle_rad)
+        
+        # 3. Translate to final location
         rotated_corners.append((cx + rx, cy + ry))
         
     return rotated_corners
@@ -48,6 +60,45 @@ def apply_noise_np(img, intensity=20):
     noise = np.random.normal(0, intensity, arr.shape)
     noisy = np.clip(arr + noise, 0, 255).astype('uint8')
     return Image.fromarray(noisy, mode=img.mode)
+
+def apply_shear_to_image(img, shear_x, shear_y):
+    """Applies affine shear to a PIL image, expanding the canvas so it isn't cropped."""
+    w, h = img.size
+    
+    # Corners of the source image relative to its center
+    corners = [(-w/2, -h/2), (w/2, -h/2), (w/2, h/2), (-w/2, h/2)]
+    
+    # Calculate where the corners will end up after shear
+    sheared_corners = [(x + shear_x * y, y + shear_y * x) for x, y in corners]
+    
+    # Calculate new bounding box needed to fit the sheared image
+    min_x = min(c[0] for c in sheared_corners)
+    max_x = max(c[0] for c in sheared_corners)
+    min_y = min(c[1] for c in sheared_corners)
+    max_y = max(c[1] for c in sheared_corners)
+    
+    new_w = int(math.ceil(max_x - min_x))
+    new_h = int(math.ceil(max_y - min_y))
+    
+    # Calculate inverse affine transform matrix for PIL
+    det = 1 - shear_x * shear_y
+    if abs(det) < 0.0001: det = 0.0001 # Prevent division by zero just in case
+    
+    inv_a = 1 / det
+    inv_b = -shear_x / det
+    inv_c = -shear_y / det
+    inv_d = 1 / det
+    
+    # Calculate translations to keep the image perfectly centered
+    tx = -inv_a * (new_w/2) - inv_b * (new_h/2) + w/2
+    ty = -inv_c * (new_w/2) - inv_d * (new_h/2) + h/2
+    
+    return img.transform(
+        (new_w, new_h), 
+        Image.AFFINE, 
+        (inv_a, inv_b, tx, inv_c, inv_d, ty), 
+        resample=Image.BICUBIC
+    )
 
 def generate_dataset_variants(original_img, original_labels_obb, base_name):
     w_img, h_img = original_img.size
@@ -94,7 +145,7 @@ def generate_dataset_variants(original_img, original_labels_obb, base_name):
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 OBB Batch Generator (Fully Auto)")
+        self.root.title("YOLOv8 OBB Batch Generator (Fully Auto + Shear)")
         self.root.geometry("1280x800")
 
         # Folder management
@@ -132,8 +183,9 @@ class YoloObbApp:
         
         # UI updated to reflect full automation
         info_font = ("Arial", 9, "bold")
-        info_color = "#2e7d32" # Green
+        info_color = "#2e7d32"
         tk.Label(ctrl, text="Rozmiar: LOSOWY (30-100px)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
+        tk.Label(ctrl, text="Ścinanie (Shear): LOSOWE (-0.3 do 0.3)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         tk.Label(ctrl, text="Obrót: LOSOWY (-180° do 180°)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         tk.Label(ctrl, text="Jasność: LOSOWA (0.5x - 1.5x)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         tk.Label(ctrl, text="Szum: LOSOWY (0-50)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
@@ -210,9 +262,7 @@ class YoloObbApp:
             self.placements = []
             self.redraw()
 
-    def apply_transform(self, img, target_size, rot, bright, noise):
-        """Skaluje obraz tak, aby jego najdłuższy bok był równy target_size px"""
-        # Obliczanie matematycznej proporcji skalowania
+    def apply_transform(self, img, target_size, rot, bright, noise, shear_x, shear_y):
         max_dim = max(img.width, img.height)
         if max_dim == 0: max_dim = 1
         scale = target_size / max_dim
@@ -224,14 +274,19 @@ class YoloObbApp:
         if bright != 1.0: res = ImageEnhance.Brightness(res).enhance(bright)
         if noise > 0: res = apply_noise_np(res, noise)
         
+        # 1. Apply Shear mapping
+        if shear_x != 0.0 or shear_y != 0.0:
+            res = apply_shear_to_image(res, shear_x, shear_y)
+            
+        # 2. Apply Rotation mapping
         res_rotated = res.rotate(rot, expand=True, resample=Image.BICUBIC)
+        
         return res_rotated, base_w, base_h
 
     def on_move(self, event):
         if not self.work_img or not self.preview_panel_img: return
         
-        # Hardcoded neutral placeholder (size 65, 0 rot, 1.0 bright, 0 noise) for preview
-        processed_ov, _, _ = self.apply_transform(self.preview_panel_img, 65, 0, 1.0, 0)
+        processed_ov, _, _ = self.apply_transform(self.preview_panel_img, 65, 0, 1.0, 0, 0.0, 0.0)
         self.tk_preview = ImageTk.PhotoImage(processed_ov)
         
         self.canvas.delete("ghost")
@@ -245,8 +300,7 @@ class YoloObbApp:
         # We only save the center points now. All parameters are generated later during batching.
         self.placements.append({'cx': cx, 'cy': cy})
 
-        # Draw the neutral placeholder to confirm the click location
-        img_rotated, _, _ = self.apply_transform(self.preview_panel_img, 65, 0, 1.0, 0)
+        img_rotated, _, _ = self.apply_transform(self.preview_panel_img, 65, 0, 1.0, 0, 0.0, 0.0)
         paste_w, paste_h = img_rotated.size
         paste_x, paste_y = int(cx - paste_w / 2), int(cy - paste_h / 2)
         
@@ -289,9 +343,11 @@ class YoloObbApp:
                     auto_rot = random.randint(-180, 180)
                     auto_bright = random.uniform(0.5, 1.5)
                     auto_noise = random.randint(0, 50)
+                    auto_shear_x = random.uniform(-0.3, 0.3)
+                    auto_shear_y = random.uniform(-0.3, 0.3)
                     
                     img_rot, bw, bh = self.apply_transform(
-                        panel_img, auto_size, auto_rot, auto_bright, auto_noise
+                        panel_img, auto_size, auto_rot, auto_bright, auto_noise, auto_shear_x, auto_shear_y
                     )
                     pw, ph = img_rot.size
                     px, py = int(p['cx'] - pw / 2), int(p['cy'] - ph / 2)

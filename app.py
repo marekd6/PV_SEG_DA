@@ -145,7 +145,7 @@ def generate_dataset_variants(original_img, original_labels_obb, base_name):
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 OBB Batch Generator (Fully Auto + Shear)")
+        self.root.title("YOLOv8 OBB Batch Generator (Auto + Shear + Mix)")
         self.root.geometry("1280x800")
 
         # Folder management
@@ -280,7 +280,6 @@ class YoloObbApp:
             
         # 2. Apply Rotation mapping
         res_rotated = res.rotate(rot, expand=True, resample=Image.BICUBIC)
-        
         return res_rotated, base_w, base_h
 
     def on_move(self, event):
@@ -330,7 +329,7 @@ class YoloObbApp:
             # Tworzenie pustego pliku txt
             open(os.path.join(LBL_DIR, f"{empty_base_name}.txt"), "w").close() 
 
-            # 2. Zapis wariantów paneli
+            # 2. Zapis wariantów z pojedynczymi panelami
             for p_idx, panel_path in enumerate(self.panel_images):
                 panel_img = Image.open(panel_path).convert("RGBA")
                 out_img = self.base_img.copy() # Start with a clean background
@@ -371,6 +370,45 @@ class YoloObbApp:
                 
                 # Generate augmented variants
                 generate_dataset_variants(out_img, labels_obb, base_name)
+                
+            # 3. Zapis wariantu "MIX" (różne panele na jednym zdjęciu)
+            out_img_mix = self.base_img.copy()
+            labels_obb_mix = []
+            
+            for p in self.placements:
+                # Wybieramy losowy panel z dostępnych dla każdego kliknięcia z osobna
+                random_panel_path = random.choice(self.panel_images)
+                panel_img_mix = Image.open(random_panel_path).convert("RGBA")
+                
+                auto_size = random.randint(30, 100)
+                auto_rot = random.randint(-180, 180)
+                auto_bright = random.uniform(0.5, 1.5)
+                auto_noise = random.randint(0, 50)
+                auto_shear_x = random.uniform(-0.3, 0.3)
+                auto_shear_y = random.uniform(-0.3, 0.3)
+                
+                img_rot_mix, bw_mix, bh_mix = self.apply_transform(
+                    panel_img_mix, auto_size, auto_rot, auto_bright, auto_noise, auto_shear_x, auto_shear_y
+                )
+                
+                pw_mix, ph_mix = img_rot_mix.size
+                px_mix, py_mix = int(p['cx'] - pw_mix / 2), int(p['cy'] - ph_mix / 2)
+
+                out_img_mix.paste(img_rot_mix, (px_mix, py_mix), mask=img_rot_mix)
+                
+                corners_mix = calculate_obb_corners(p['cx'], p['cy'], bw_mix, bh_mix, auto_rot, auto_shear_x, auto_shear_y)
+                norm_corners_mix = normalize_obb(corners_mix, out_img_mix.width, out_img_mix.height)
+                labels_obb_mix.append((0, norm_corners_mix))
+                
+            base_name_mix = f"bg{self.current_bg_idx}_mix_{uuid.uuid4().hex[:4]}"
+            
+            out_img_mix.convert("RGB").save(os.path.join(IMG_DIR, f"{base_name_mix}.jpg"))
+            with open(os.path.join(LBL_DIR, f"{base_name_mix}.txt"), "w") as f:
+                for cls, pts in labels_obb_mix:
+                    coords = " ".join([f"{pt[0]:.6f} {pt[1]:.6f}" for pt in pts])
+                    f.write(f"{cls} {coords}\n")
+                    
+            generate_dataset_variants(out_img_mix, labels_obb_mix, base_name_mix)
                 
             self.lbl_status.config(text="Zapisano pomyślnie. Ładowanie kolejnego tła...")
             

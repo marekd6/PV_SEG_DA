@@ -7,7 +7,7 @@ import uuid
 import math
 import random
 
-OUTPUT_BASE_DIR = "dataset_yolo_obb5"
+OUTPUT_BASE_DIR = "dataset_yolo_obb10"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 
@@ -339,12 +339,13 @@ class YoloObbApp:
                 # Apply all saved placements to THIS specific panel
                 for p in self.placements:
                     # ---> FULL AUTOMATION GENERATOR <---
-                    auto_size = random.randint(30, 100)
+                    auto_size = random.randint(30, 77)
                     auto_rot = random.randint(-180, 180)
                     auto_bright = random.uniform(0.5, 1.5)
-                    auto_noise = random.randint(0, 50)
-                    auto_shear_x = random.uniform(-0.3, 0.3)
-                    auto_shear_y = random.uniform(-0.3, 0.3)
+                    auto_noise = random.randint(0, 2)
+                    auto_noise = 0 # no extra noise on panel
+                    auto_shear_x = random.uniform(-0.2, 0.2)
+                    auto_shear_y = random.uniform(-0.2, 0.2)
                     
                     img_rot, bw, bh = self.apply_transform(
                         panel_img, auto_size, auto_rot, auto_bright, auto_noise, auto_shear_x, auto_shear_y
@@ -374,7 +375,7 @@ class YoloObbApp:
             self.lbl_status.config(text="Zapisano pomyślnie. Ładowanie kolejnego tła...")
             
             # 3. Auto-przejście do następnego obrazka
-            self.root.after(500, self.next_bg) 
+            self.root.after(111, self.next_bg) 
             
         except Exception as e:
             messagebox.showerror("Błąd", str(e))

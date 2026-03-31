@@ -284,6 +284,8 @@ class YoloObbApp:
         tk.Label(ctrl, text="--- Sterowanie ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
         tk.Label(ctrl, text="LEWY KLIK: Postaw Grid z podglądu", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold")).pack(anchor="w", pady=2)
         tk.Label(ctrl, text="PRAWY KLIK: Postaw Pojedynczy Panel", bg="#dddddd", fg="#0d47a1", font=("Arial", 9, "bold")).pack(anchor="w", pady=2)
+        # Added Spacebar instructions
+        tk.Label(ctrl, text="SPACJA: Zmień podgląd na inny układ", bg="#dddddd", fg="#d84315", font=("Arial", 9, "bold")).pack(anchor="w", pady=2)
 
         tk.Label(ctrl, text="--- Zapis ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
         self.btn_save = tk.Button(ctrl, text="ZAPISZ WSZYSTKIE WARIANTY", command=self.save_batch, bg="#4CAF50", fg="white", font=("Arial", 10, "bold"), state=tk.DISABLED)
@@ -305,6 +307,9 @@ class YoloObbApp:
         self.canvas.bind("<Button-3>", lambda e: self.on_click(e, is_grid=False))
         
         self.canvas.bind("<Motion>", self.on_move)
+        
+        # Bind Space key to root to generate new random grid without applying
+        self.root.bind("<space>", self.on_space)
 
     def load_bg_folder(self):
         # folder = filedialog.askdirectory(title="Wybierz folder z tłami")
@@ -393,6 +398,13 @@ class YoloObbApp:
 
     def on_move(self, event):
         self.last_x, self.last_y = event.x, event.y
+        self.draw_ghost()
+
+    def on_space(self, event):
+        """Generates a new random grid shape for the preview without placing it."""
+        if not self.work_img or not self.preview_panel_img: return
+        
+        self.current_grid_shape = generate_random_grid(random.randint(2, 6))
         self.draw_ghost()
 
     def on_click(self, event, is_grid):

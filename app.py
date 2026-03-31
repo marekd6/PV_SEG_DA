@@ -246,6 +246,12 @@ class YoloObbApp:
         # Stores dictionaries of placements: {cx, cy, scale, rot, bright, noise}
         self.placements = [] 
         self.tk_preview = None
+        
+        # Track coordinates for the live ghost drawing
+        self.last_x = 0
+        self.last_y = 0
+        # Pre-generate the first grid shape to display as the cursor preview
+        self.current_grid_shape = generate_random_grid(random.randint(2, 6))
 
         self.setup_ui()
 
@@ -276,8 +282,8 @@ class YoloObbApp:
         tk.Label(ctrl, text="Jasność: LOSOWA (0.5x - 1.5x)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         
         tk.Label(ctrl, text="--- Sterowanie ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
-        tk.Label(ctrl, text="LEWY KLIK: Losowy Grid (2-6 paneli)", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold")).pack(anchor="w", pady=2)
-        tk.Label(ctrl, text="PRAWY KLIK: Pojedynczy Panel", bg="#dddddd", fg="#0d47a1", font=("Arial", 9, "bold")).pack(anchor="w", pady=2)
+        tk.Label(ctrl, text="LEWY KLIK: Postaw Grid z podglądu", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold")).pack(anchor="w", pady=2)
+        tk.Label(ctrl, text="PRAWY KLIK: Postaw Pojedynczy Panel", bg="#dddddd", fg="#0d47a1", font=("Arial", 9, "bold")).pack(anchor="w", pady=2)
 
         tk.Label(ctrl, text="--- Zapis ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
         self.btn_save = tk.Button(ctrl, text="ZAPISZ WSZYSTKIE WARIANTY", command=self.save_batch, bg="#4CAF50", fg="white", font=("Arial", 10, "bold"), state=tk.DISABLED)
@@ -319,6 +325,7 @@ class YoloObbApp:
             if self.panel_images:
                 # Load the first panel just for the visual preview cursor
                 self.preview_panel_img = Image.open(self.panel_images[0]).convert("RGBA")
+                self.current_grid_shape = generate_random_grid(random.randint(2, 6))
                 self.lbl_status.config(text=f"Wczytano {len(self.panel_images)} paneli")
                 self.check_ready_state()
             else:
@@ -351,6 +358,7 @@ class YoloObbApp:
             self.work_img = self.base_img.copy()
             self.placements = []
             self.redraw()
+            self.draw_ghost()
 
     def apply_transform(self, img, scale_factor, rot, bright, noise, shear_x, shear_y):
         base_w = max(1, int(img.width * scale_factor))
@@ -368,29 +376,44 @@ class YoloObbApp:
         res_rotated = res.rotate(rot, expand=True, resample=Image.BICUBIC)
         return res_rotated, base_w, base_h
 
-    def on_move(self, event):
+    def draw_ghost(self):
+        """Draws the current queued shape as a ghost following the mouse."""
         if not self.work_img or not self.preview_panel_img: return
         
-        scale_factor = 65 / max(self.preview_panel_img.size)
-        processed_ov, _, _ = self.apply_transform(self.preview_panel_img, scale_factor, 0, 1.0, 0, 0.0, 0.0)
+        self.canvas.delete("ghost")
+        
+        # Build composite of the currently queued shape
+        comp = create_grid_composite(self.preview_panel_img, self.current_grid_shape)
+        scale_factor = 65 / max(self.preview_panel_img.size) 
+        
+        processed_ov, _, _ = self.apply_transform(comp, scale_factor, 0, 1.0, 0, 0.0, 0.0)
         self.tk_preview = ImageTk.PhotoImage(processed_ov)
         
-        self.canvas.delete("ghost")
-        self.canvas.create_image(event.x, event.y, image=self.tk_preview, tag="ghost")
+        self.canvas.create_image(self.last_x, self.last_y, image=self.tk_preview, tag="ghost")
+
+    def on_move(self, event):
+        self.last_x, self.last_y = event.x, event.y
+        self.draw_ghost()
 
     def on_click(self, event, is_grid):
         if not self.work_img or not self.preview_panel_img: return
         
         cx, cy = event.x, event.y
+        self.last_x, self.last_y = cx, cy
         
         if is_grid:
-            grid_shape = generate_random_grid(random.randint(2, 6))
+            # Save the current shape we were previewing
+            grid_shape_to_save = self.current_grid_shape
+            # Roll a new random shape for the NEXT placement
+            self.current_grid_shape = generate_random_grid(random.randint(2, 6))
         else:
-            grid_shape = [(0, 0)]
+            # Right click forces a single panel
+            grid_shape_to_save = [(0, 0)]
             
-        self.placements.append({'cx': cx, 'cy': cy, 'grid_shape': grid_shape})
+        self.placements.append({'cx': cx, 'cy': cy, 'grid_shape': grid_shape_to_save})
 
-        comp = create_grid_composite(self.preview_panel_img, grid_shape)
+        # Visually stamp the shape onto the working canvas so we can see it
+        comp = create_grid_composite(self.preview_panel_img, grid_shape_to_save)
         scale_factor = 65 / max(self.preview_panel_img.size)
         
         img_rotated, _, _ = self.apply_transform(comp, scale_factor, 0, 1.0, 0, 0.0, 0.0)
@@ -399,6 +422,7 @@ class YoloObbApp:
         
         self.work_img.paste(img_rotated, (paste_x, paste_y), mask=img_rotated)
         self.redraw()
+        self.draw_ghost() # Keep ghost active after stamp
         self.lbl_status.config(text=f"Dodano pozycję. Razem obiektów (masek): {len(self.placements)}")
 
     def redraw(self):

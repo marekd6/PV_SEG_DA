@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import messagebox
 from PIL import Image, ImageTk, ImageEnhance
 import numpy as np
 import os
@@ -7,7 +7,7 @@ import uuid
 import math
 import random
 
-OUTPUT_BASE_DIR = "dataset_yolo_seg"
+OUTPUT_BASE_DIR = "dataset_yolo_seg8"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 
@@ -389,7 +389,7 @@ class YoloObbApp:
         
         # Build composite of the currently queued shape
         comp = create_grid_composite(self.preview_panel_img, self.current_grid_shape)
-        scale_factor = 65 / max(self.preview_panel_img.size) 
+        scale_factor = 33 / max(self.preview_panel_img.size) 
         
         processed_ov, _, _ = self.apply_transform(comp, scale_factor, 0, 1.0, 0, 0.0, 0.0)
         self.tk_preview = ImageTk.PhotoImage(processed_ov)
@@ -404,7 +404,7 @@ class YoloObbApp:
         """Generates a new random grid shape for the preview without placing it."""
         if not self.work_img or not self.preview_panel_img: return
         
-        self.current_grid_shape = generate_random_grid(random.randint(2, 6))
+        self.current_grid_shape = generate_random_grid(random.randint(2, 5))
         self.draw_ghost()
 
     def on_click(self, event, is_grid):
@@ -417,7 +417,7 @@ class YoloObbApp:
             # Save the current shape we were previewing
             grid_shape_to_save = self.current_grid_shape
             # Roll a new random shape for the NEXT placement
-            self.current_grid_shape = generate_random_grid(random.randint(2, 6))
+            self.current_grid_shape = generate_random_grid(random.randint(2, 5))
         else:
             # Right click forces a single panel
             grid_shape_to_save = [(0, 0)]
@@ -426,7 +426,7 @@ class YoloObbApp:
 
         # Visually stamp the shape onto the working canvas so we can see it
         comp = create_grid_composite(self.preview_panel_img, grid_shape_to_save)
-        scale_factor = 65 / max(self.preview_panel_img.size)
+        scale_factor = 33 / max(self.preview_panel_img.size)
         
         img_rotated, _, _ = self.apply_transform(comp, scale_factor, 0, 1.0, 0, 0.0, 0.0)
         paste_w, paste_h = img_rotated.size
@@ -468,10 +468,11 @@ class YoloObbApp:
                 # Apply all saved placements to THIS specific panel
                 for p in self.placements:
                     # ---> FULL AUTOMATION GENERATOR <---
-                    auto_size = random.randint(30, 77)
+                    auto_size = random.randint(22, 44)
+                    # auto_size = 33
                     auto_rot = random.randint(-180, 180)
                     auto_bright = random.uniform(0.5, 1.5)
-                    auto_noise = random.randint(0, 50)
+                    auto_noise = random.randint(0, 22)
                     auto_shear_x = random.uniform(-0.3, 0.3)
                     auto_shear_y = random.uniform(-0.3, 0.3)
                     
@@ -516,10 +517,10 @@ class YoloObbApp:
                 random_panel_path = random.choice(self.panel_images)
                 panel_img_mix = Image.open(random_panel_path).convert("RGBA")
                 
-                auto_size = random.randint(30, 100)
+                auto_size = random.randint(22, 44)
                 auto_rot = random.randint(-180, 180)
                 auto_bright = random.uniform(0.5, 1.5)
-                auto_noise = random.randint(0, 50)
+                auto_noise = random.randint(0, 22)
                 auto_shear_x = random.uniform(-0.3, 0.3)
                 auto_shear_y = random.uniform(-0.3, 0.3)
                 
@@ -554,7 +555,7 @@ class YoloObbApp:
             generate_dataset_variants(out_img_mix, labels_poly_mix, base_name_mix)
                 
             self.lbl_status.config(text="Zapisano pomyślnie. Ładowanie kolejnego tła...")
-            self.root.after(500, self.next_bg) 
+            self.root.after(77, self.next_bg) 
             
         except Exception as e:
             messagebox.showerror("Błąd", str(e))

@@ -17,20 +17,94 @@ def resize_for_display(img, max_size=800):
     scale = min(max_size / w, max_size / h, 1.0)
     return cv2.resize(img, (int(w*scale), int(h*scale))), scale
 
+# ---------- Brightness matching ----------
+def match_brightness_lab(fg, bg, mask):
+    fg_lab = cv2.cvtColor(fg, cv2.COLOR_RGB2LAB).astype(np.float32)
+    bg_lab = cv2.cvtColor(bg, cv2.COLOR_RGB2LAB).astype(np.float32)
+
+    m = mask.astype(bool)
+    if np.sum(m) == 0:
+        return fg
+
+    fg_L = fg_lab[..., 0][m]
+    bg_L = bg_lab[..., 0][m]
+
+    fg_mean, fg_std = fg_L.mean(), fg_L.std() + 1e-6
+    bg_mean, bg_std = bg_L.mean(), bg_L.std() + 1e-6
+
+    fg_lab[..., 0] = (fg_lab[..., 0] - fg_mean) * (bg_std / fg_std) + bg_mean
+
+    fg_lab = np.clip(fg_lab, 0, 255).astype(np.uint8)
+    return cv2.cvtColor(fg_lab, cv2.COLOR_LAB2RGB)
+
+# ---------- Shadow ----------
+def generate_shadow(mask, offset=(3, 3), blur_ksize=9):
+    h, w = mask.shape
+    M = np.float32([[1, 0, offset[0]], [0, 1, offset[1]]])
+    shadow = cv2.warpAffine(mask.astype(np.uint8)*255, M, (w, h))
+    shadow = cv2.GaussianBlur(shadow, (blur_ksize, blur_ksize), 0)
+    return shadow.astype(np.float32) / 255.0
+
+def apply_shadow(bg, shadow, strength=0.4):
+    shadow_3c = np.repeat(shadow[..., None], 3, axis=2)
+    return (bg * (1 - strength * shadow_3c)).astype(np.uint8)
+
+# ---------- Blending ----------
 def feather_mask(mask, ksize=7):
-    mask = mask.astype(np.float32)
-    return cv2.GaussianBlur(mask, (ksize, ksize), 0)
+    return cv2.GaussianBlur(mask.astype(np.float32), (ksize, ksize), 0)
 
 def alpha_blend(fg, bg, mask):
     m = mask[..., None]
     return (fg * m + bg * (1 - m)).astype(np.uint8)
 
+def blur_edges(fg, mask, width=2):
+    kernel = np.ones((3, 3), np.uint8)
+    eroded = cv2.erode(mask.astype(np.uint8), kernel, iterations=width)
+    edge = mask - eroded
+
+    blurred = cv2.GaussianBlur(fg, (5, 5), 0)
+
+    edge_3c = edge[..., None]
+    return fg * (1 - edge_3c) + blurred * edge_3c
+
+# ---------- Rotation ----------
 def rotate_image_and_mask(img, mask, angle):
     h, w = img.shape[:2]
     M = cv2.getRotationMatrix2D((w//2, h//2), angle, 1.0)
+
     img_r = cv2.warpAffine(img, M, (w, h), flags=cv2.INTER_LINEAR)
     mask_r = cv2.warpAffine(mask, M, (w, h), flags=cv2.INTER_NEAREST)
+
     return img_r, mask_r
+
+# ---------- Rotated polygon ----------
+def get_rotated_polygon(px, py, w, h, angle):
+    cx = px + w / 2
+    cy = py + h / 2
+
+    corners = np.array([
+        [-w/2, -h/2],
+        [ w/2, -h/2],
+        [ w/2,  h/2],
+        [-w/2,  h/2]
+    ])
+
+    theta = np.deg2rad(angle)
+    R = np.array([
+        [np.cos(theta), -np.sin(theta)],
+        [np.sin(theta),  np.cos(theta)]
+    ])
+
+    rotated = corners @ R.T
+    rotated[:, 0] += cx
+    rotated[:, 1] += cy
+
+    return rotated
+
+# ---------- Debug draw ----------
+def draw_polygon(img, poly):
+    pts = np.array(poly, dtype=np.int32)
+    cv2.polylines(img, [pts], isClosed=True, color=(255,0,0), thickness=1)
 
 # -----------------------------
 # Main App
@@ -53,6 +127,8 @@ class App:
 
         self.polygons = []
 
+        self.show_polygons = True  # toggle debug
+
         btn_frame = tk.Frame(root)
         btn_frame.pack()
 
@@ -74,15 +150,13 @@ class App:
     def load_panel(self):
         path = './pvs/p1.png'
         panel = load_image(path)
-
-        # simple rectangular mask
         mask = np.ones(panel.shape[:2], dtype=np.uint8)
 
         self.panel = panel
         self.panel_mask = mask
 
     def place_panel(self, x, y):
-        size = 40  # base size
+        size = 40
         grid = (3, 2)
 
         for i in range(grid[0]):
@@ -94,8 +168,8 @@ class App:
                 panel_resized = cv2.resize(self.panel, (size, size//2))
                 mask_resized = cv2.resize(self.panel_mask, (size, size//2))
 
-                # rotation
                 angle = np.random.uniform(-10, 10)
+
                 panel_r, mask_r = rotate_image_and_mask(panel_resized, mask_resized, angle)
 
                 h, w = panel_r.shape[:2]
@@ -105,29 +179,35 @@ class App:
 
                 bg_patch = self.bg[py:py+h, px:px+w]
 
-                # simple brightness match
-                panel_r = panel_r * 0.9 + bg_patch * 0.1
-                panel_r = panel_r.astype(np.uint8)
+                # Brightness
+                panel_r = match_brightness_lab(panel_r, bg_patch, mask_r)
 
-                # blending
-                mask_soft = feather_mask(mask_r, 5)
-                blended = alpha_blend(panel_r, bg_patch, mask_soft)
+                # Shadow
+                shadow = generate_shadow(mask_r, offset=(3, 3))
+                bg_shadowed = apply_shadow(bg_patch, shadow)
+
+                # Blending
+                panel_r = blur_edges(panel_r, mask_r)
+                soft_mask = feather_mask(mask_r, 7)
+
+                blended = alpha_blend(panel_r, bg_shadowed, soft_mask)
 
                 self.bg[py:py+h, px:px+w] = blended
 
-                # polygon (YOLO format)
-                poly = [
-                    (px, py),
-                    (px+w, py),
-                    (px+w, py+h),
-                    (px, py+h)
-                ]
+                # --- Correct polygon ---
+                poly = get_rotated_polygon(px, py, w, h, angle)
                 self.polygons.append(poly)
 
         self.refresh_display()
 
     def refresh_display(self):
-        self.display_img, _ = resize_for_display(self.bg)
+        disp = self.bg.copy()
+
+        if self.show_polygons:
+            for poly in self.polygons:
+                draw_polygon(disp, poly)
+
+        self.display_img, _ = resize_for_display(disp)
         self.tk_img = ImageTk.PhotoImage(Image.fromarray(self.display_img))
         self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_img)
 
@@ -155,7 +235,7 @@ class App:
                     norm.append(x / w)
                     norm.append(y / h)
 
-                line = "0 " + " ".join(map(str, norm))
+                line = "0 " + " ".join(f"{v:.6f}" for v in norm)
                 f.write(line + "\n")
 
         print("Saved:", img_path, label_path)

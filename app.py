@@ -7,7 +7,7 @@ import uuid
 import math
 import random
 
-OUTPUT_BASE_DIR = "dataset_yolo_seg14"
+OUTPUT_BASE_DIR = "dataset_yolo_seg"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 
@@ -34,9 +34,7 @@ def generate_random_grid(num_cells):
     return list(cells)
 
 def create_grid_composite(panel_img, grid_shape):
-    """
-    Creates a transparent image containing the tightly packed, unrotated grid.
-    """
+    """Creates a transparent image containing the tightly packed, unrotated grid."""
     w, h = panel_img.size
     
     min_x = min(gx for gx, gy in grid_shape)
@@ -57,9 +55,7 @@ def create_grid_composite(panel_img, grid_shape):
     return composite, w, h
 
 def get_grid_polygon(grid_shape, cell_w, cell_h):
-    """
-    Traces the outer boundary of the grid to create a continuous polygon mask.
-    """
+    """Traces the outer boundary of the grid to create a continuous polygon mask."""
     min_x = min(gx for gx, gy in grid_shape)
     min_y = min(gy for gx, gy in grid_shape)
     max_x = max(gx for gx, gy in grid_shape)
@@ -130,13 +126,6 @@ def normalize_polygon(polygon, img_w, img_h):
         norm_poly.append((nx, ny))
     return norm_poly
 
-def apply_noise_np(img, intensity=20):
-    if intensity <= 0: return img
-    arr = np.array(img)
-    noise = np.random.normal(0, intensity, arr.shape)
-    noisy = np.clip(arr + noise, 0, 255).astype('uint8')
-    return Image.fromarray(noisy, mode=img.mode)
-
 def apply_shear_to_image(img, shear_x, shear_y):
     w, h = img.size
     corners = [(-w/2, -h/2), (w/2, -h/2), (w/2, h/2), (-w/2, h/2)]
@@ -167,6 +156,79 @@ def apply_shear_to_image(img, shear_x, shear_y):
         (inv_a, inv_b, tx, inv_c, inv_d, ty), 
         resample=Image.BICUBIC
     )
+
+def apply_geometry(img, rot, shear_x, shear_y):
+    res = img.copy()
+    if shear_x != 0.0 or shear_y != 0.0:
+        res = apply_shear_to_image(res, shear_x, shear_y)
+    return res.rotate(rot, expand=True, resample=Image.BICUBIC)
+
+def apply_noise_np(img, intensity=20):
+    if intensity <= 0: return img
+    arr = np.array(img).astype('float32')
+    if arr.shape[2] == 4:
+        noise = np.random.normal(0, intensity, arr[:,:,:3].shape)
+        arr[:,:,:3] = np.clip(arr[:,:,:3] + noise, 0, 255)
+    else:
+        noise = np.random.normal(0, intensity, arr.shape)
+        arr = np.clip(arr + noise, 0, 255)
+    return Image.fromarray(arr.astype('uint8'), mode=img.mode)
+
+def apply_photometry(img, bright, noise, blur_radius):
+    res = img.copy()
+    if bright != 1.0: 
+        res = ImageEnhance.Brightness(res).enhance(bright)
+    if blur_radius > 0: 
+        res = res.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+    if noise > 0: 
+        res = apply_noise_np(res, noise)
+    return res
+
+def create_shadow(img, blur_radius, opacity):
+    """
+    Creates a soft, semi-transparent black shadow of the exact panel shape.
+    Automatically pads the image so the blur doesn't clip on the edges.
+    """
+    pad = int(math.ceil(blur_radius)) * 2 + 2
+    padded_size = (img.width + pad * 2, img.height + pad * 2)
+    shadow = Image.new("RGBA", padded_size, (0, 0, 0, 0))
+    
+    # Extract original alpha and reduce its opacity
+    alpha = img.split()[3]
+    alpha = alpha.point(lambda p: int(p * opacity))
+    
+    # Create black silhouette
+    black = Image.new("RGBA", img.size, (0, 0, 0, 255))
+    black.putalpha(alpha)
+    
+    # Paste silhouette into padded canvas and blur it
+    shadow.paste(black, (pad, pad))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+    
+    return shadow, pad
+
+def calculate_brightness_adjustment(bg_img, panel_geom_img, px, py):
+    pw, ph = panel_geom_img.size
+    bg_crop = bg_img.crop((px, py, px + pw, py + ph))
+    
+    bg_arr = np.array(bg_crop.convert("RGBA"), dtype=np.float32)
+    panel_arr = np.array(panel_geom_img.convert("RGBA"), dtype=np.float32)
+    
+    alpha = panel_arr[:, :, 3]
+    mask = alpha > 10 
+    
+    if not np.any(mask): return 1.0
+        
+    def get_lum(arr):
+        return 0.299 * arr[:, :, 0] + 0.587 * arr[:, :, 1] + 0.114 * arr[:, :, 2]
+        
+    bg_lum = np.mean(get_lum(bg_arr)[mask])
+    panel_lum = np.mean(get_lum(panel_arr)[mask])
+    
+    if panel_lum < 1.0: panel_lum = 1.0 
+    
+    factor = bg_lum / panel_lum
+    return max(0.2, min(factor, 3.0))
 
 def rotate_point(x, y, cx, cy, angle_rad):
     tx, ty = x - cx, y - cy
@@ -215,7 +277,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_name):
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Batch Generator (Tetris Ghost + Blur + No Gaps)")
+        self.root.title("YOLOv8 Seg Batch Generator (Auto-Shadows + Brightness)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -228,6 +290,7 @@ class YoloObbApp:
         
         self.placements = [] 
         self.tk_preview = None
+        self.tk_shadow = None
         
         self.last_x = 0
         self.last_y = 0
@@ -258,7 +321,10 @@ class YoloObbApp:
         tk.Label(ctrl, text="Rozmycie (Blur): LOSOWE (0.0 - 1.0px)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         tk.Label(ctrl, text="Ścinanie (Shear): LOSOWE (-0.3 do 0.3)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         tk.Label(ctrl, text="Obrót: LOSOWY (-180° do 180°)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
-        tk.Label(ctrl, text="Jasność: LOSOWA (0.5x - 1.5x)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
+        
+        # New modifiers labels
+        tk.Label(ctrl, text="Cień (Shadow): ZMIENNY KIERUNEK", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold", "italic")).pack(anchor="w", pady=(8,2))
+        tk.Label(ctrl, text="Jasność: DOPASOWANA DO TŁA", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold", "italic")).pack(anchor="w", pady=2)
         
         tk.Label(ctrl, text="--- Sterowanie ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
         tk.Label(ctrl, text="LEWY KLIK: Postaw Grid z podglądu", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold")).pack(anchor="w", pady=2)
@@ -339,22 +405,10 @@ class YoloObbApp:
             self.draw_ghost()
 
     def _get_scaled_preview_panel(self):
-        """Helper to get a standard 65px scaled panel for UI drawing."""
-        scale_factor = 65 / max(self.preview_panel_img.size)
+        scale_factor = 33 / max(self.preview_panel_img.size)
         scaled_w = max(1, int(self.preview_panel_img.width * scale_factor))
         scaled_h = max(1, int(self.preview_panel_img.height * scale_factor))
         return self.preview_panel_img.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
-
-    def transform_composite(self, img, rot, bright, noise, shear_x, shear_y, blur_radius):
-        """Applies global modifiers to the fully assembled composite image."""
-        res = img.copy()
-        if bright != 1.0: res = ImageEnhance.Brightness(res).enhance(bright)
-        if blur_radius > 0: res = res.filter(ImageFilter.GaussianBlur(radius=blur_radius))
-        if noise > 0: res = apply_noise_np(res, noise)
-        if shear_x != 0.0 or shear_y != 0.0:
-            res = apply_shear_to_image(res, shear_x, shear_y)
-        res_rotated = res.rotate(rot, expand=True, resample=Image.BICUBIC)
-        return res_rotated
 
     def draw_ghost(self):
         if not self.work_img or not self.preview_panel_img: return
@@ -363,9 +417,27 @@ class YoloObbApp:
         
         scaled_panel = self._get_scaled_preview_panel()
         comp, _, _ = create_grid_composite(scaled_panel, self.current_grid_shape)
-        processed_ov = self.transform_composite(comp, 0, 1.0, 0, 0.0, 0.0, 0.0)
         
+        img_geom = apply_geometry(comp, 0, 0.0, 0.0)
+        
+        pw, ph = img_geom.size
+        px, py = int(self.last_x - pw / 2), int(self.last_y - ph / 2)
+        auto_bright = calculate_brightness_adjustment(self.base_img, img_geom, px, py)
+        
+        processed_ov = apply_photometry(img_geom, auto_bright, 0, 0.0)
+        
+        # Create visual shadow preview
+        shadow_img, pad = create_shadow(processed_ov, blur_radius=4.0, opacity=0.35)
+        
+        self.tk_shadow = ImageTk.PhotoImage(shadow_img)
         self.tk_preview = ImageTk.PhotoImage(processed_ov)
+        
+        # Because the shadow is padded evenly on all sides, drawing it at the exact 
+        # same X/Y + offset works perfectly for center-anchoring.
+        shadow_offset_x = 4
+        shadow_offset_y = 4
+        
+        self.canvas.create_image(self.last_x + shadow_offset_x, self.last_y + shadow_offset_y, image=self.tk_shadow, tag="ghost")
         self.canvas.create_image(self.last_x, self.last_y, image=self.tk_preview, tag="ghost")
 
     def on_move(self, event):
@@ -393,12 +465,22 @@ class YoloObbApp:
 
         scaled_panel = self._get_scaled_preview_panel()
         comp, _, _ = create_grid_composite(scaled_panel, grid_shape_to_save)
-        img_rotated = self.transform_composite(comp, 0, 1.0, 0, 0.0, 0.0, 0.0)
         
-        paste_w, paste_h = img_rotated.size
-        paste_x, paste_y = int(cx - paste_w / 2), int(cy - paste_h / 2)
+        img_geom = apply_geometry(comp, 0, 0.0, 0.0)
+        pw, ph = img_geom.size
+        px, py = int(cx - pw / 2), int(cy - ph / 2)
         
-        self.work_img.paste(img_rotated, (paste_x, paste_y), mask=img_rotated)
+        auto_bright = calculate_brightness_adjustment(self.base_img, img_geom, px, py)
+        img_rot = apply_photometry(img_geom, auto_bright, 0, 0.0)
+        
+        # Generate and paste shadow for the stamp
+        shadow_img, pad = create_shadow(img_rot, blur_radius=4.0, opacity=0.35)
+        shadow_px = px + 4 - pad
+        shadow_py = py + 4 - pad
+        self.work_img.paste(shadow_img, (shadow_px, shadow_py), mask=shadow_img)
+        
+        # Paste the panel
+        self.work_img.paste(img_rot, (px, py), mask=img_rot)
         
         self.redraw()
         self.draw_ghost() 
@@ -431,19 +513,21 @@ class YoloObbApp:
                 labels_poly = []
                 
                 for p in self.placements:
-                    # ---> FULL AUTOMATION GENERATOR <---
-                    auto_size = random.randint(22, 44)
-                    # auto_size = 33
+                    auto_size = random.randint(30, 100)
                     auto_rot = random.randint(-180, 180)
-                    auto_bright = random.uniform(0.5, 1.5)
-                    auto_noise = random.randint(0, 22)
+                    auto_noise = random.randint(0, 50)
                     auto_shear_x = random.uniform(-0.3, 0.3)
                     auto_shear_y = random.uniform(-0.3, 0.3)
                     auto_blur = random.uniform(0.0, 1.0)
                     
+                    # Random shadow parameters for dataset variance
+                    sh_off_x = random.randint(2, 6)
+                    sh_off_y = random.randint(2, 6)
+                    sh_blur = random.uniform(3.0, 6.0)
+                    sh_opacity = random.uniform(0.2, 0.5)
+                    
                     grid_shape = p['grid_shape']
                     
-                    # Scale the panel down before assembling the grid
                     scale_factor = auto_size / max(panel_img.size)
                     scaled_w = max(1, int(panel_img.width * scale_factor))
                     scaled_h = max(1, int(panel_img.height * scale_factor))
@@ -451,12 +535,19 @@ class YoloObbApp:
                     
                     comp, cell_w, cell_h = create_grid_composite(scaled_panel, grid_shape)
                     
-                    img_rot = self.transform_composite(
-                        comp, auto_rot, auto_bright, auto_noise, auto_shear_x, auto_shear_y, auto_blur
-                    )
+                    img_geom = apply_geometry(comp, auto_rot, auto_shear_x, auto_shear_y)
                     
-                    pw_comp, ph_comp = img_rot.size
+                    pw_comp, ph_comp = img_geom.size
                     px, py = int(p['cx'] - pw_comp / 2), int(p['cy'] - ph_comp / 2)
+                    auto_bright = calculate_brightness_adjustment(self.base_img, img_geom, px, py)
+                    
+                    img_rot = apply_photometry(img_geom, auto_bright, auto_noise, auto_blur)
+                    
+                    # Paste shadow FIRST
+                    shadow_img, pad = create_shadow(img_rot, sh_blur, sh_opacity)
+                    out_img.paste(shadow_img, (px + sh_off_x - pad, py + sh_off_y - pad), mask=shadow_img)
+                    
+                    # Then paste panel
                     out_img.paste(img_rot, (px, py), mask=img_rot)
                     
                     base_poly = get_grid_polygon(grid_shape, cell_w, cell_h)
@@ -481,16 +572,20 @@ class YoloObbApp:
                 random_panel_path = random.choice(self.panel_images)
                 panel_img_mix = Image.open(random_panel_path).convert("RGBA")
                 
-                auto_size = random.randint(22, 44)
+                auto_size = random.randint(30, 100)
                 auto_rot = random.randint(-180, 180)
-                auto_bright = random.uniform(0.5, 1.5)
-                auto_noise = random.randint(0, 22)
+                auto_noise = random.randint(0, 50)
                 auto_shear_x = random.uniform(-0.3, 0.3)
                 auto_shear_y = random.uniform(-0.3, 0.3)
                 auto_blur = random.uniform(0.0, 1.0)
                 
+                sh_off_x = random.randint(2, 6)
+                sh_off_y = random.randint(2, 6)
+                sh_blur = random.uniform(3.0, 6.0)
+                sh_opacity = random.uniform(0.2, 0.5)
+                
                 grid_shape = p['grid_shape']
-                comp_mix = create_grid_composite(panel_img_mix, grid_shape)
+                
                 scale_factor_mix = auto_size / max(panel_img_mix.size)
                 scaled_w_mix = max(1, int(panel_img_mix.width * scale_factor_mix))
                 scaled_h_mix = max(1, int(panel_img_mix.height * scale_factor_mix))
@@ -498,12 +593,19 @@ class YoloObbApp:
                 
                 comp_mix, cell_w_mix, cell_h_mix = create_grid_composite(scaled_panel_mix, grid_shape)
                 
-                img_rot_mix = self.transform_composite(
-                    comp_mix, auto_rot, auto_bright, auto_noise, auto_shear_x, auto_shear_y, auto_blur
-                )
+                img_geom_mix = apply_geometry(comp_mix, auto_rot, auto_shear_x, auto_shear_y)
                 
-                pw_comp_mix, ph_comp_mix = img_rot_mix.size
+                pw_comp_mix, ph_comp_mix = img_geom_mix.size
                 px_mix, py_mix = int(p['cx'] - pw_comp_mix / 2), int(p['cy'] - ph_comp_mix / 2)
+                
+                auto_bright_mix = calculate_brightness_adjustment(self.base_img, img_geom_mix, px_mix, py_mix)
+                img_rot_mix = apply_photometry(img_geom_mix, auto_bright_mix, auto_noise, auto_blur)
+                
+                # Paste shadow FIRST
+                shadow_img_mix, pad_mix = create_shadow(img_rot_mix, sh_blur, sh_opacity)
+                out_img_mix.paste(shadow_img_mix, (px_mix + sh_off_x - pad_mix, py_mix + sh_off_y - pad_mix), mask=shadow_img_mix)
+                
+                # Then paste panel
                 out_img_mix.paste(img_rot_mix, (px_mix, py_mix), mask=img_rot_mix)
                 
                 base_poly_mix = get_grid_polygon(grid_shape, cell_w_mix, cell_h_mix)

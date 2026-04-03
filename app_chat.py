@@ -3,53 +3,17 @@ from tkinter import filedialog
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
+import os
+import random
 
 # -----------------------------
-# Utility functions
+# Utility
 # -----------------------------
 
 def load_image(path):
     img = cv2.imread(path)
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-def resize_for_display(img, max_size=800):
-    h, w = img.shape[:2]
-    scale = min(max_size / w, max_size / h, 1.0)
-    return cv2.resize(img, (int(w*scale), int(h*scale))), scale
-
-# ---------- Brightness matching ----------
-def match_brightness_lab(fg, bg, mask):
-    fg_lab = cv2.cvtColor(fg, cv2.COLOR_RGB2LAB).astype(np.float32)
-    bg_lab = cv2.cvtColor(bg, cv2.COLOR_RGB2LAB).astype(np.float32)
-
-    m = mask.astype(bool)
-    if np.sum(m) == 0:
-        return fg
-
-    fg_L = fg_lab[..., 0][m]
-    bg_L = bg_lab[..., 0][m]
-
-    fg_mean, fg_std = fg_L.mean(), fg_L.std() + 1e-6
-    bg_mean, bg_std = bg_L.mean(), bg_L.std() + 1e-6
-
-    fg_lab[..., 0] = (fg_lab[..., 0] - fg_mean) * (bg_std / fg_std) + bg_mean
-
-    fg_lab = np.clip(fg_lab, 0, 255).astype(np.uint8)
-    return cv2.cvtColor(fg_lab, cv2.COLOR_LAB2RGB)
-
-# ---------- Shadow ----------
-def generate_shadow(mask, offset=(3, 3), blur_ksize=9):
-    h, w = mask.shape
-    M = np.float32([[1, 0, offset[0]], [0, 1, offset[1]]])
-    shadow = cv2.warpAffine(mask.astype(np.uint8)*255, M, (w, h))
-    shadow = cv2.GaussianBlur(shadow, (blur_ksize, blur_ksize), 0)
-    return shadow.astype(np.float32) / 255.0
-
-def apply_shadow(bg, shadow, strength=0.4):
-    shadow_3c = np.repeat(shadow[..., None], 3, axis=2)
-    return (bg * (1 - strength * shadow_3c)).astype(np.uint8)
-
-# ---------- Blending ----------
 def feather_mask(mask, ksize=7):
     return cv2.GaussianBlur(mask.astype(np.float32), (ksize, ksize), 0)
 
@@ -57,188 +21,183 @@ def alpha_blend(fg, bg, mask):
     m = mask[..., None]
     return (fg * m + bg * (1 - m)).astype(np.uint8)
 
-def blur_edges(fg, mask, width=2):
-    kernel = np.ones((3, 3), np.uint8)
-    eroded = cv2.erode(mask.astype(np.uint8), kernel, iterations=width)
-    edge = mask - eroded
-
+def blur_edges(fg, mask):
     blurred = cv2.GaussianBlur(fg, (5, 5), 0)
-
+    edge = mask - cv2.erode(mask, np.ones((3,3),np.uint8), iterations=2)
     edge_3c = edge[..., None]
-    return fg * (1 - edge_3c) + blurred * edge_3c
+    return fg*(1-edge_3c) + blurred*edge_3c
 
-# ---------- Rotation ----------
-def rotate_image_and_mask(img, mask, angle):
-    h, w = img.shape[:2]
-    M = cv2.getRotationMatrix2D((w//2, h//2), angle, 1.0)
+def match_brightness_lab(fg, bg, mask):
+    fg_lab = cv2.cvtColor(fg, cv2.COLOR_RGB2LAB).astype(np.float32)
+    bg_lab = cv2.cvtColor(bg, cv2.COLOR_RGB2LAB).astype(np.float32)
 
-    img_r = cv2.warpAffine(img, M, (w, h), flags=cv2.INTER_LINEAR)
-    mask_r = cv2.warpAffine(mask, M, (w, h), flags=cv2.INTER_NEAREST)
+    m = mask.astype(bool)
+    if np.sum(m)==0: return fg
 
-    return img_r, mask_r
+    fg_L = fg_lab[...,0][m]
+    bg_L = bg_lab[...,0][m]
 
-# ---------- Rotated polygon ----------
-def get_rotated_polygon(px, py, w, h, angle):
-    cx = px + w / 2
-    cy = py + h / 2
+    fg_lab[...,0] = (fg_lab[...,0]-fg_L.mean())*(bg_L.std()+1e-6)/(fg_L.std()+1e-6)+bg_L.mean()
+    fg_lab = np.clip(fg_lab,0,255).astype(np.uint8)
+    return cv2.cvtColor(fg_lab, cv2.COLOR_LAB2RGB)
 
-    corners = np.array([
-        [-w/2, -h/2],
-        [ w/2, -h/2],
-        [ w/2,  h/2],
-        [-w/2,  h/2]
-    ])
+def generate_shadow(mask):
+    M = np.float32([[1,0,3],[0,1,3]])
+    shadow = cv2.warpAffine(mask*255,M,(mask.shape[1],mask.shape[0]))
+    shadow = cv2.GaussianBlur(shadow,(9,9),0)/255.0
+    return shadow
 
-    theta = np.deg2rad(angle)
-    R = np.array([
-        [np.cos(theta), -np.sin(theta)],
-        [np.sin(theta),  np.cos(theta)]
-    ])
+def apply_shadow(bg, shadow):
+    return (bg*(1-0.4*shadow[...,None])).astype(np.uint8)
 
-    rotated = corners @ R.T
-    rotated[:, 0] += cx
-    rotated[:, 1] += cy
+def rotate(img, mask, angle):
+    h,w = img.shape[:2]
+    M = cv2.getRotationMatrix2D((w//2,h//2),angle,1)
+    return (cv2.warpAffine(img,M,(w,h)),
+            cv2.warpAffine(mask,M,(w,h)))
 
-    return rotated
-
-# ---------- Debug draw ----------
-def draw_polygon(img, poly):
-    pts = np.array(poly, dtype=np.int32)
-    cv2.polylines(img, [pts], isClosed=True, color=(255,0,0), thickness=1)
+def get_poly(px,py,w,h,angle):
+    cx,cy = px+w/2, py+h/2
+    pts = np.array([[-w/2,-h/2],[w/2,-h/2],[w/2,h/2],[-w/2,h/2]])
+    R = np.array([[np.cos(np.deg2rad(angle)),-np.sin(np.deg2rad(angle))],
+                  [np.sin(np.deg2rad(angle)), np.cos(np.deg2rad(angle))]])
+    pts = pts @ R.T
+    pts[:,0]+=cx; pts[:,1]+=cy
+    return pts
 
 # -----------------------------
-# Main App
+# App
 # -----------------------------
 
 class App:
     def __init__(self, root):
         self.root = root
-        self.root.title("Solar Panel Composer")
-
         self.canvas = tk.Canvas(root)
         self.canvas.pack()
 
-        self.bg = None
-        self.display_img = None
-        self.scale = 1.0
+        self.bg_paths = []
+        self.panel_paths = []
 
-        self.panel = None
-        self.panel_mask = None
+        self.bg_idx = 0
+        self.placements = []
 
-        self.polygons = []
+        btn = tk.Frame(root)
+        btn.pack()
 
-        self.show_polygons = True  # toggle debug
+        tk.Button(btn,text="Load BG Folder",command=self.load_bg).pack(side=tk.LEFT)
+        tk.Button(btn,text="Load Panel Folder",command=self.load_panels).pack(side=tk.LEFT)
+        tk.Button(btn,text="Save",command=self.save).pack(side=tk.LEFT)
+        tk.Button(btn,text="Skip",command=self.next_bg).pack(side=tk.LEFT)
 
-        btn_frame = tk.Frame(root)
-        btn_frame.pack()
-
-        tk.Button(btn_frame, text="Load Background", command=self.load_bg).pack(side=tk.LEFT)
-        tk.Button(btn_frame, text="Load Panel", command=self.load_panel).pack(side=tk.LEFT)
-        tk.Button(btn_frame, text="Save", command=self.save).pack(side=tk.LEFT)
-
-        self.canvas.bind("<Button-1>", self.on_click)
+        self.canvas.bind("<Button-1>", self.left_click)
+        self.canvas.bind("<Button-3>", self.right_click)
 
     def load_bg(self):
-        path = 'C:/Users/admin/Desktop/inference_data/Inference_data/mck26/74865_1014763_N-34-50-C-c-4-4_0.jpg'
-        self.bg = load_image(path)
-        self.display_img, self.scale = resize_for_display(self.bg)
+        folder = 'C:/Users/admin/Desktop/inference_data/Inference_data/mck26/'
+        self.bg_paths = [os.path.join(folder,f) for f in os.listdir(folder)]
+        self.bg_idx = 0
+        self.load_current_bg()
 
-        self.tk_img = ImageTk.PhotoImage(Image.fromarray(self.display_img))
-        self.canvas.config(width=self.display_img.shape[1], height=self.display_img.shape[0])
-        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_img)
+    def load_panels(self):
+        folder = './pvs'
+        self.panel_paths = [os.path.join(folder,f) for f in os.listdir(folder)]
 
-    def load_panel(self):
-        path = './pvs/p1.png'
-        panel = load_image(path)
-        mask = np.ones(panel.shape[:2], dtype=np.uint8)
+    def load_current_bg(self):
+        if self.bg_idx >= len(self.bg_paths):
+            print("Done")
+            return
+        self.bg = load_image(self.bg_paths[self.bg_idx])
+        self.display()
 
-        self.panel = panel
-        self.panel_mask = mask
+        self.placements = []
 
-    def place_panel(self, x, y):
-        size = 40
-        grid = (3, 2)
+    def display(self):
+        img = Image.fromarray(self.bg)
+        self.tk = ImageTk.PhotoImage(img)
+        self.canvas.config(width=img.width, height=img.height)
+        self.canvas.create_image(0,0,anchor=tk.NW,image=self.tk)
 
-        for i in range(grid[0]):
-            for j in range(grid[1]):
+    def left_click(self, e):
+        count = random.randint(2,6)
+        self.placements.append((e.x,e.y,count))
+        self.preview()
 
-                px = x + i * size
-                py = y + j * size
+    def right_click(self, e):
+        self.placements.append((e.x,e.y,1))
+        self.preview()
 
-                panel_resized = cv2.resize(self.panel, (size, size//2))
-                mask_resized = cv2.resize(self.panel_mask, (size, size//2))
+    def preview(self):
+        img = self.bg.copy()
+        for x,y,c in self.placements:
+            for i in range(c):
+                cv2.circle(img,(x+i*5,y+i*5),3,(255,0,0),-1)
+        self.tk = ImageTk.PhotoImage(Image.fromarray(img))
+        self.canvas.create_image(0,0,anchor=tk.NW,image=self.tk)
 
-                angle = np.random.uniform(-10, 10)
+    def generate(self, panel_img):
+        out = self.bg.copy()
+        polys = []
 
-                panel_r, mask_r = rotate_image_and_mask(panel_resized, mask_resized, angle)
+        for x,y,count in self.placements:
+            for i in range(count):
 
-                h, w = panel_r.shape[:2]
+                size = random.randint(30,50)
+                px = x + i*size
+                py = y
 
-                if py+h >= self.bg.shape[0] or px+w >= self.bg.shape[1]:
+                panel = cv2.resize(panel_img,(size,size//2))
+                mask = np.ones(panel.shape[:2],np.uint8)
+
+                angle = random.uniform(-15,15)
+                panel,mask = rotate(panel,mask,angle)
+
+                h,w = panel.shape[:2]
+                if py+h>=out.shape[0] or px+w>=out.shape[1]:
                     continue
 
-                bg_patch = self.bg[py:py+h, px:px+w]
+                bg_patch = out[py:py+h,px:px+w]
 
-                # Brightness
-                panel_r = match_brightness_lab(panel_r, bg_patch, mask_r)
+                panel = match_brightness_lab(panel,bg_patch,mask)
+                shadow = generate_shadow(mask)
+                bg_patch = apply_shadow(bg_patch,shadow)
 
-                # Shadow
-                shadow = generate_shadow(mask_r, offset=(3, 3))
-                bg_shadowed = apply_shadow(bg_patch, shadow)
+                panel = blur_edges(panel,mask)
+                mask_soft = feather_mask(mask)
 
-                # Blending
-                panel_r = blur_edges(panel_r, mask_r)
-                soft_mask = feather_mask(mask_r, 7)
+                blended = alpha_blend(panel,bg_patch,mask_soft)
+                out[py:py+h,px:px+w] = blended
 
-                blended = alpha_blend(panel_r, bg_shadowed, soft_mask)
+                polys.append(get_poly(px,py,w,h,angle))
 
-                self.bg[py:py+h, px:px+w] = blended
-
-                # --- Correct polygon ---
-                poly = get_rotated_polygon(px, py, w, h, angle)
-                self.polygons.append(poly)
-
-        self.refresh_display()
-
-    def refresh_display(self):
-        disp = self.bg.copy()
-
-        if self.show_polygons:
-            for poly in self.polygons:
-                draw_polygon(disp, poly)
-
-        self.display_img, _ = resize_for_display(disp)
-        self.tk_img = ImageTk.PhotoImage(Image.fromarray(self.display_img))
-        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_img)
-
-    def on_click(self, event):
-        if self.panel is None:
-            return
-
-        x = int(event.x / self.scale)
-        y = int(event.y / self.scale)
-
-        self.place_panel(x, y)
+        return out, polys
 
     def save(self):
-        img_path = "output.jpg"
-        label_path = "output.txt"
+        base_name = f"bg_{self.bg_idx:04d}"
 
-        cv2.imwrite(img_path, cv2.cvtColor(self.bg, cv2.COLOR_RGB2BGR))
+        for p_idx, p_path in enumerate(self.panel_paths):
+            panel_img = load_image(p_path)
 
-        h, w = self.bg.shape[:2]
+            out, polys = self.generate(panel_img)
 
-        with open(label_path, "w") as f:
-            for poly in self.polygons:
-                norm = []
-                for x, y in poly:
-                    norm.append(x / w)
-                    norm.append(y / h)
+            img_name = f"{base_name}_panel_{p_idx:03d}.jpg"
+            txt_name = img_name.replace(".jpg",".txt")
 
-                line = "0 " + " ".join(f"{v:.6f}" for v in norm)
-                f.write(line + "\n")
+            cv2.imwrite(img_name, cv2.cvtColor(out, cv2.COLOR_RGB2BGR))
 
-        print("Saved:", img_path, label_path)
+            h,w = out.shape[:2]
+            with open(txt_name,"w") as f:
+                for poly in polys:
+                    norm = []
+                    for x,y in poly:
+                        norm.append(x/w); norm.append(y/h)
+                    f.write("0 "+" ".join(map(str,norm))+"\n")
+
+        print("Saved set for background", self.bg_idx)
+        self.next_bg()
+
+    def next_bg(self):
+        self.bg_idx += 1
+        self.load_current_bg()
 
 
 # -----------------------------

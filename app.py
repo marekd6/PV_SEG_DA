@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import messagebox
 from PIL import Image, ImageTk, ImageEnhance, ImageFilter
 import numpy as np
 import os
@@ -239,7 +239,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_name):
     img_aug = original_img.copy()
     labels_aug = [(cls, list(pts)) for cls, pts in original_labels_poly]
 
-    img_aug = apply_noise_np(img_aug, random.randint(10, 20))
+    img_aug = apply_noise_np(img_aug, random.randint(5, 11))
 
     angle = random.choice([random.randint(-15, -5), random.randint(5, 15)])
     
@@ -518,7 +518,7 @@ class YoloObbApp:
                     
                     # Randomized uniquely per panel variation
                     auto_rot = random.randint(-180, 180)
-                    auto_noise = random.randint(0, 22)
+                    auto_noise = random.randint(0, 11)
                     auto_stretch_x = random.uniform(0.8, 1.2)
                     auto_stretch_y = random.uniform(0.8, 1.2)
                     auto_blur = random.uniform(0.0, 1.0)
@@ -574,7 +574,7 @@ class YoloObbApp:
                 fixed_size = p['size']
                 
                 auto_rot = random.randint(-180, 180)
-                auto_noise = random.randint(0, 22)
+                auto_noise = random.randint(0, 11)
                 auto_stretch_x = random.uniform(0.8, 1.2)
                 auto_stretch_y = random.uniform(0.8, 1.2)
                 auto_blur = random.uniform(0.0, 1.0)

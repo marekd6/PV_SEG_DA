@@ -7,55 +7,81 @@ import uuid
 import math
 import random
 
-OUTPUT_BASE_DIR = "dataset_yolo_seg25"
+OUTPUT_BASE_DIR = "dataset_yolo_seg26"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 
 os.makedirs(IMG_DIR, exist_ok=True)
 os.makedirs(LBL_DIR, exist_ok=True)
 
+def overlaps(c1, c2):
+    """Checks if two 2x2 logical cells overlap."""
+    return abs(c1[0] - c2[0]) < 2 and abs(c1[1] - c2[1]) < 2
+
 def generate_random_grid(num_cells):
-    """Generates a random contiguous Tetris-like shape (polyomino)."""
+    """Generates a random contiguous staggered shape (polyomino with half-shifts)."""
     if num_cells <= 1: return [(0, 0)]
-    cells = {(0, 0)}
-    adj = {(1, 0), (-1, 0), (0, 1), (0, -1)}
+    cells = [(0, 0)]
+    
+    # Valid adjacency moves for a 2x2 logical cell allowing half-shifts
+    valid_moves = [
+        (0, -2), (-1, -2), (1, -2), # Up (flush, left half, right half)
+        (0, 2), (-1, 2), (1, 2),    # Down (flush, left half, right half)
+        (-2, 0), (-2, -1), (-2, 1), # Left (flush, up half, down half)
+        (2, 0), (2, -1), (2, 1)     # Right (flush, up half, down half)
+    ]
+    
+    adj = set(valid_moves)
     
     for _ in range(num_cells - 1):
-        if not adj: break
-        new_cell = random.choice(list(adj))
-        cells.add(new_cell)
-        adj.remove(new_cell)
+        valid_adj = []
+        for move in adj:
+            if not any(overlaps(move, c) for c in cells):
+                valid_adj.append(move)
         
-        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+        if not valid_adj: break
+        
+        new_cell = random.choice(valid_adj)
+        cells.append(new_cell)
+        if new_cell in adj:
+            adj.remove(new_cell)
+        
+        for dx, dy in valid_moves:
             neighbor = (new_cell[0] + dx, new_cell[1] + dy)
-            if neighbor not in cells:
+            if not any(overlaps(neighbor, c) for c in cells):
                 adj.add(neighbor)
                 
-    return list(cells)
+    return cells
 
 def create_grid_composite(panel_img, grid_shape):
-    """Creates a transparent image containing the tightly packed, unrotated grid."""
+    """Creates a transparent image containing the tightly packed, staggered grid."""
+    # panel_img is guaranteed to be even width and height at this stage
     w, h = panel_img.size
+    half_w = w // 2
+    half_h = h // 2
     
     min_x = min(gx for gx, gy in grid_shape)
     max_x = max(gx for gx, gy in grid_shape)
     min_y = min(gy for gx, gy in grid_shape)
     max_y = max(gy for gx, gy in grid_shape)
     
-    gw = (max_x - min_x + 1) * w
-    gh = (max_y - min_y + 1) * h
+    gw = (max_x - min_x + 2) * half_w
+    gh = (max_y - min_y + 2) * half_h
     
     composite = Image.new("RGBA", (gw, gh), (0, 0, 0, 0))
     
     for gx, gy in grid_shape:
-        px = (gx - min_x) * w
-        py = (gy - min_y) * h
+        px = (gx - min_x) * half_w
+        py = (gy - min_y) * half_h
         composite.paste(panel_img, (px, py), mask=panel_img)
         
     return composite, w, h
 
 def get_grid_polygon(grid_shape, cell_w, cell_h):
-    """Traces the outer boundary of the grid to create a continuous polygon mask."""
+    """Traces the outer boundary of the staggered grid to create a continuous mask."""
+    half_w = cell_w / 2.0
+    half_h = cell_h / 2.0
+    
     min_x = min(gx for gx, gy in grid_shape)
     min_y = min(gy for gx, gy in grid_shape)
     max_x = max(gx for gx, gy in grid_shape)
@@ -66,11 +92,16 @@ def get_grid_polygon(grid_shape, cell_w, cell_h):
         cx = gx - min_x
         cy = gy - min_y
         
+        # Break all 4 edges of the cell into 8 half-edges for perfect cancellation
         cell_edges = [
-            ((cx, cy), (cx+1, cy)),       # Top
-            ((cx+1, cy), (cx+1, cy+1)),   # Right
-            ((cx+1, cy+1), (cx, cy+1)),   # Bottom
-            ((cx, cy+1), (cx, cy))        # Left
+            ((cx, cy), (cx+1, cy)),       # Top 1
+            ((cx+1, cy), (cx+2, cy)),     # Top 2
+            ((cx+2, cy), (cx+2, cy+1)),   # Right 1
+            ((cx+2, cy+1), (cx+2, cy+2)), # Right 2
+            ((cx+2, cy+2), (cx+1, cy+2)), # Bottom 1
+            ((cx+1, cy+2), (cx, cy+2)),   # Bottom 2
+            ((cx, cy+2), (cx, cy+1)),     # Left 1
+            ((cx, cy+1), (cx, cy))        # Left 2
         ]
         
         for edge in cell_edges:
@@ -92,21 +123,20 @@ def get_grid_polygon(grid_shape, cell_w, cell_h):
         if current_node == start_node:
             break
             
-    comp_w_cells = (max_x - min_x + 1)
-    comp_h_cells = (max_y - min_y + 1)
+    comp_w_cells = (max_x - min_x + 2)
+    comp_h_cells = (max_y - min_y + 2)
     center_x = comp_w_cells / 2.0
     center_y = comp_h_cells / 2.0
     
     centered_poly = []
     for nx, ny in polygon:
-        px = (nx - center_x) * cell_w
-        py = (ny - center_y) * cell_h
+        px = (nx - center_x) * half_w
+        py = (ny - center_y) * half_h
         centered_poly.append((px, py))
         
     return centered_poly
 
 def transform_polygon(polygon, cx, cy, rot_deg, stretch_x, stretch_y):
-    """Applies anisotropic scaling, rotation, and translation to a polygon mask."""
     angle_rad = math.radians(-rot_deg)
     transformed = []
     for x, y in polygon:
@@ -126,37 +156,6 @@ def normalize_polygon(polygon, img_w, img_h):
         ny = max(0, min(img_h, y)) / img_h 
         norm_poly.append((nx, ny))
     return norm_poly
-
-def apply_shear_to_image(img, shear_x, shear_y):
-    w, h = img.size
-    corners = [(-w/2, -h/2), (w/2, -h/2), (w/2, h/2), (-w/2, h/2)]
-    sheared_corners = [(x + shear_x * y, y + shear_y * x) for x, y in corners]
-    
-    min_x = min(c[0] for c in sheared_corners)
-    max_x = max(c[0] for c in sheared_corners)
-    min_y = min(c[1] for c in sheared_corners)
-    max_y = max(c[1] for c in sheared_corners)
-    
-    new_w = int(math.ceil(max_x - min_x))
-    new_h = int(math.ceil(max_y - min_y))
-    
-    det = 1 - shear_x * shear_y
-    if abs(det) < 0.0001: det = 0.0001 
-    
-    inv_a = 1 / det
-    inv_b = -shear_x / det
-    inv_c = -shear_y / det
-    inv_d = 1 / det
-    
-    tx = -inv_a * (new_w/2) - inv_b * (new_h/2) + w/2
-    ty = -inv_c * (new_w/2) - inv_d * (new_h/2) + h/2
-    
-    return img.transform(
-        (new_w, new_h), 
-        Image.AFFINE, 
-        (inv_a, inv_b, tx, inv_c, inv_d, ty), 
-        resample=Image.BICUBIC
-    )
 
 def apply_geometry(img, rot, stretch_x, stretch_y):
     res = img.copy()
@@ -272,7 +271,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_name):
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Batch Generator (Geometry Fixed, Modifiers Random)")
+        self.root.title("YOLOv8 Seg Batch Generator (Staggered Half-Shift Grids)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -404,8 +403,10 @@ class YoloObbApp:
 
     def _get_scaled_preview_panel(self):
         scale_factor = self.current_size / max(self.preview_panel_img.size)
-        scaled_w = max(1, int(self.preview_panel_img.width * scale_factor))
-        scaled_h = max(1, int(self.preview_panel_img.height * scale_factor))
+        scaled_w = max(2, int(self.preview_panel_img.width * scale_factor))
+        scaled_w = (scaled_w // 2) * 2 # Force even
+        scaled_h = max(2, int(self.preview_panel_img.height * scale_factor))
+        scaled_h = (scaled_h // 2) * 2 # Force even
         return self.preview_panel_img.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
 
     def draw_ghost(self):
@@ -416,7 +417,6 @@ class YoloObbApp:
         scaled_panel = self._get_scaled_preview_panel()
         comp, _, _ = create_grid_composite(scaled_panel, self.current_grid_shape)
         
-        # Ghost is drawn neutrally, since stretch and rotation vary by panel variant
         img_geom = apply_geometry(comp, 0, 1.0, 1.0)
         
         pw, ph = img_geom.size
@@ -451,6 +451,12 @@ class YoloObbApp:
         cx, cy = event.x, event.y
         self.last_x, self.last_y = cx, cy
         
+        scale_factor = self.current_size / max(self.preview_panel_img.size)
+        cell_w = max(2, int(self.preview_panel_img.width * scale_factor))
+        cell_w = (cell_w // 2) * 2
+        cell_h = max(2, int(self.preview_panel_img.height * scale_factor))
+        cell_h = (cell_h // 2) * 2
+        
         if is_grid:
             grid_shape_to_save = self.current_grid_shape
         else:
@@ -460,10 +466,10 @@ class YoloObbApp:
             'cx': cx, 
             'cy': cy, 
             'grid_shape': grid_shape_to_save,
-            'size': self.current_size
+            'cell_w': cell_w,
+            'cell_h': cell_h
         })
 
-        # Visual UI stamp (neutral stretch/rot, dynamic brightness)
         scaled_panel = self._get_scaled_preview_panel()
         comp, _, _ = create_grid_composite(scaled_panel, grid_shape_to_save)
         
@@ -514,9 +520,9 @@ class YoloObbApp:
                 
                 for p in self.placements:
                     grid_shape = p['grid_shape']
-                    fixed_size = p['size']
+                    cell_w = p['cell_w']
+                    cell_h = p['cell_h']
                     
-                    # Randomized uniquely per panel variation
                     auto_rot = random.randint(-180, 180)
                     auto_noise = random.randint(0, 11)
                     auto_stretch_x = random.uniform(0.8, 1.2)
@@ -528,13 +534,9 @@ class YoloObbApp:
                     sh_blur = random.uniform(3.0, 6.0)
                     sh_opacity = random.uniform(0.2, 0.5)
                     
-                    # Scale based on the locked fixed_size
-                    scale_factor = fixed_size / max(panel_img.size)
-                    scaled_w = max(1, int(panel_img.width * scale_factor))
-                    scaled_h = max(1, int(panel_img.height * scale_factor))
-                    scaled_panel = panel_img.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
+                    scaled_panel = panel_img.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
                     
-                    comp, cell_w, cell_h = create_grid_composite(scaled_panel, grid_shape)
+                    comp, cw, ch = create_grid_composite(scaled_panel, grid_shape)
                     
                     img_geom = apply_geometry(comp, auto_rot, auto_stretch_x, auto_stretch_y)
                     
@@ -571,7 +573,8 @@ class YoloObbApp:
                 panel_img_mix = Image.open(random_panel_path).convert("RGBA")
                 
                 grid_shape = p['grid_shape']
-                fixed_size = p['size']
+                cell_w = p['cell_w']
+                cell_h = p['cell_h']
                 
                 auto_rot = random.randint(-180, 180)
                 auto_noise = random.randint(0, 11)
@@ -584,12 +587,9 @@ class YoloObbApp:
                 sh_blur = random.uniform(3.0, 6.0)
                 sh_opacity = random.uniform(0.2, 0.5)
                 
-                scale_factor_mix = fixed_size / max(panel_img_mix.size)
-                scaled_w_mix = max(1, int(panel_img_mix.width * scale_factor_mix))
-                scaled_h_mix = max(1, int(panel_img_mix.height * scale_factor_mix))
-                scaled_panel_mix = panel_img_mix.resize((scaled_w_mix, scaled_h_mix), Image.Resampling.LANCZOS)
+                scaled_panel_mix = panel_img_mix.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
                 
-                comp_mix, cell_w_mix, cell_h_mix = create_grid_composite(scaled_panel_mix, grid_shape)
+                comp_mix, cw_mix, ch_mix = create_grid_composite(scaled_panel_mix, grid_shape)
                 
                 img_geom_mix = apply_geometry(comp_mix, auto_rot, auto_stretch_x, auto_stretch_y)
                 
@@ -603,7 +603,7 @@ class YoloObbApp:
                 out_img_mix.paste(shadow_img_mix, (px_mix + sh_off_x - pad_mix, py_mix + sh_off_y - pad_mix), mask=shadow_img_mix)
                 out_img_mix.paste(img_rot_mix, (px_mix, py_mix), mask=img_rot_mix)
                 
-                base_poly_mix = get_grid_polygon(grid_shape, cell_w_mix, cell_h_mix)
+                base_poly_mix = get_grid_polygon(grid_shape, cell_w, cell_h)
                 trans_poly_mix = transform_polygon(base_poly_mix, p['cx'], p['cy'], auto_rot, auto_stretch_x, auto_stretch_y)
                 norm_poly_mix = normalize_polygon(trans_poly_mix, out_img_mix.width, out_img_mix.height)
                 labels_poly_mix.append((0, norm_poly_mix))

@@ -7,7 +7,7 @@ import uuid
 import math
 import random
 
-OUTPUT_BASE_DIR = "dataset_yolo_seg26"
+OUTPUT_BASE_DIR = "dataset_yolo_seg28"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 
@@ -19,17 +19,29 @@ def overlaps(c1, c2):
     return abs(c1[0] - c2[0]) < 2 and abs(c1[1] - c2[1]) < 2
 
 def generate_random_grid(num_cells):
-    """Generates a random contiguous staggered shape (polyomino with half-shifts)."""
+    """
+    Generates a random contiguous shape (polyomino).
+    80% of the time it creates neatly aligned (flush) grids.
+    20% of the time it allows staggered (half-shifted) connections.
+    """
     if num_cells <= 1: return [(0, 0)]
     cells = [(0, 0)]
     
-    # Valid adjacency moves for a 2x2 logical cell allowing half-shifts
-    valid_moves = [
-        (0, -2), (-1, -2), (1, -2), # Up (flush, left half, right half)
-        (0, 2), (-1, 2), (1, 2),    # Down (flush, left half, right half)
-        (-2, 0), (-2, -1), (-2, 1), # Left (flush, up half, down half)
-        (2, 0), (2, -1), (2, 1)     # Right (flush, up half, down half)
-    ]
+    # Decide if this specific grid will allow half-shifts
+    allow_shifts = random.random() < 0.2
+    
+    if allow_shifts:
+        valid_moves = [
+            (0, -2), (-1, -2), (1, -2), # Up (flush, left half, right half)
+            (0, 2), (-1, 2), (1, 2),    # Down (flush, left half, right half)
+            (-2, 0), (-2, -1), (-2, 1), # Left (flush, up half, down half)
+            (2, 0), (2, -1), (2, 1)     # Right (flush, up half, down half)
+        ]
+    else:
+        # Strictly neat axes (flush alignment only)
+        valid_moves = [
+            (0, -2), (0, 2), (-2, 0), (2, 0)
+        ]
     
     adj = set(valid_moves)
     
@@ -54,8 +66,7 @@ def generate_random_grid(num_cells):
     return cells
 
 def create_grid_composite(panel_img, grid_shape):
-    """Creates a transparent image containing the tightly packed, staggered grid."""
-    # panel_img is guaranteed to be even width and height at this stage
+    """Creates a transparent image containing the tightly packed grid."""
     w, h = panel_img.size
     half_w = w // 2
     half_h = h // 2
@@ -78,7 +89,7 @@ def create_grid_composite(panel_img, grid_shape):
     return composite, w, h
 
 def get_grid_polygon(grid_shape, cell_w, cell_h):
-    """Traces the outer boundary of the staggered grid to create a continuous mask."""
+    """Traces the outer boundary of the grid to create a continuous mask."""
     half_w = cell_w / 2.0
     half_h = cell_h / 2.0
     
@@ -238,7 +249,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_name):
     img_aug = original_img.copy()
     labels_aug = [(cls, list(pts)) for cls, pts in original_labels_poly]
 
-    img_aug = apply_noise_np(img_aug, random.randint(5, 11))
+    img_aug = apply_noise_np(img_aug, random.randint(10, 20))
 
     angle = random.choice([random.randint(-15, -5), random.randint(5, 15)])
     
@@ -271,7 +282,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_name):
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Batch Generator (Staggered Half-Shift Grids)")
+        self.root.title("YOLOv8 Seg Generator (80% Flush / 20% Shifted)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -359,6 +370,7 @@ class YoloObbApp:
 
     def load_panel_folder(self):
         folder = './pvs'
+        folder = './dark_pvs'
         if folder:
             self.panel_images = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
             if self.panel_images:
@@ -404,9 +416,9 @@ class YoloObbApp:
     def _get_scaled_preview_panel(self):
         scale_factor = self.current_size / max(self.preview_panel_img.size)
         scaled_w = max(2, int(self.preview_panel_img.width * scale_factor))
-        scaled_w = (scaled_w // 2) * 2 # Force even
+        scaled_w = (scaled_w // 2) * 2 
         scaled_h = max(2, int(self.preview_panel_img.height * scale_factor))
-        scaled_h = (scaled_h // 2) * 2 # Force even
+        scaled_h = (scaled_h // 2) * 2 
         return self.preview_panel_img.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
 
     def draw_ghost(self):
@@ -467,7 +479,8 @@ class YoloObbApp:
             'cy': cy, 
             'grid_shape': grid_shape_to_save,
             'cell_w': cell_w,
-            'cell_h': cell_h
+            'cell_h': cell_h,
+            'size': self.current_size
         })
 
         scaled_panel = self._get_scaled_preview_panel()

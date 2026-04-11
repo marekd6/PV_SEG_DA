@@ -7,7 +7,63 @@ import uuid
 import math
 import random
 
-OUTPUT_BASE_DIR = "dataset_yolo_seg28"
+# ==============================================================================
+# --- CONFIGURATION CONSTANTS ---
+# ==============================================================================
+
+# Directories
+OUTPUT_BASE_DIR = "dataset_yolo_seg22"
+DEFAULT_BG_FOLDER = 'C:/Users/admin/Desktop/inference_data/Inference_data/mck26'
+DEFAULT_PANEL_FOLDER = './pvs'
+
+# Grid Generation
+GRID_CELLS_MIN = 2
+GRID_CELLS_MAX = 6
+GRID_SHIFT_PROBABILITY = 0.2  # 20% chance for a staggered (half-shift) grid layout
+
+# Panel Base Geometry (Locked per placement click)
+PANEL_SIZE_MIN = 22
+PANEL_SIZE_MAX = 44
+
+# Per-Panel Variant Augmentations (Randomized individually during batch save)
+ROT_MIN = -180
+ROT_MAX = 180
+STRETCH_MIN = 0.8
+STRETCH_MAX = 1.2
+NOISE_MIN = 0
+NOISE_MAX = 50
+BLUR_MIN = 0.0
+BLUR_MAX = 1.0
+
+# Per-Panel Shadow Parameters
+SHADOW_OFFSET_MIN = 2
+SHADOW_OFFSET_MAX = 6
+SHADOW_BLUR_MIN = 3.0
+SHADOW_BLUR_MAX = 6.0
+SHADOW_OPACITY_MIN = 0.2
+SHADOW_OPACITY_MAX = 0.5
+
+# Global Image Extra Variant Augmentations
+GLOBAL_NOISE_MIN = 10
+GLOBAL_NOISE_MAX = 20
+GLOBAL_ROT_RANGE_NEG = (-15, -5)
+GLOBAL_ROT_RANGE_POS = (5, 15)
+
+# Photometry & Math settings
+BRIGHTNESS_CLAMP_MIN = 0.2
+BRIGHTNESS_CLAMP_MAX = 3.0
+ALPHA_MASK_THRESHOLD = 10
+
+# UI Ghost Preview Settings
+UI_GHOST_SCALE_BASE = 33
+UI_SHADOW_BLUR = 4.0
+UI_SHADOW_OPACITY = 0.35
+UI_SHADOW_OFFSET = 4
+
+# ==============================================================================
+# --- APPLICATION LOGIC ---
+# ==============================================================================
+
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 
@@ -19,29 +75,21 @@ def overlaps(c1, c2):
     return abs(c1[0] - c2[0]) < 2 and abs(c1[1] - c2[1]) < 2
 
 def generate_random_grid(num_cells):
-    """
-    Generates a random contiguous shape (polyomino).
-    80% of the time it creates neatly aligned (flush) grids.
-    20% of the time it allows staggered (half-shifted) connections.
-    """
+    """Generates a random contiguous shape (polyomino) based on grid shift probability."""
     if num_cells <= 1: return [(0, 0)]
     cells = [(0, 0)]
     
-    # Decide if this specific grid will allow half-shifts
-    allow_shifts = random.random() < 0.2
+    allow_shifts = random.random() < GRID_SHIFT_PROBABILITY
     
     if allow_shifts:
         valid_moves = [
-            (0, -2), (-1, -2), (1, -2), # Up (flush, left half, right half)
-            (0, 2), (-1, 2), (1, 2),    # Down (flush, left half, right half)
-            (-2, 0), (-2, -1), (-2, 1), # Left (flush, up half, down half)
-            (2, 0), (2, -1), (2, 1)     # Right (flush, up half, down half)
+            (0, -2), (-1, -2), (1, -2), 
+            (0, 2), (-1, 2), (1, 2),    
+            (-2, 0), (-2, -1), (-2, 1), 
+            (2, 0), (2, -1), (2, 1)     
         ]
     else:
-        # Strictly neat axes (flush alignment only)
-        valid_moves = [
-            (0, -2), (0, 2), (-2, 0), (2, 0)
-        ]
+        valid_moves = [(0, -2), (0, 2), (-2, 0), (2, 0)]
     
     adj = set(valid_moves)
     
@@ -66,7 +114,6 @@ def generate_random_grid(num_cells):
     return cells
 
 def create_grid_composite(panel_img, grid_shape):
-    """Creates a transparent image containing the tightly packed grid."""
     w, h = panel_img.size
     half_w = w // 2
     half_h = h // 2
@@ -89,7 +136,6 @@ def create_grid_composite(panel_img, grid_shape):
     return composite, w, h
 
 def get_grid_polygon(grid_shape, cell_w, cell_h):
-    """Traces the outer boundary of the grid to create a continuous mask."""
     half_w = cell_w / 2.0
     half_h = cell_h / 2.0
     
@@ -103,16 +149,15 @@ def get_grid_polygon(grid_shape, cell_w, cell_h):
         cx = gx - min_x
         cy = gy - min_y
         
-        # Break all 4 edges of the cell into 8 half-edges for perfect cancellation
         cell_edges = [
-            ((cx, cy), (cx+1, cy)),       # Top 1
-            ((cx+1, cy), (cx+2, cy)),     # Top 2
-            ((cx+2, cy), (cx+2, cy+1)),   # Right 1
-            ((cx+2, cy+1), (cx+2, cy+2)), # Right 2
-            ((cx+2, cy+2), (cx+1, cy+2)), # Bottom 1
-            ((cx+1, cy+2), (cx, cy+2)),   # Bottom 2
-            ((cx, cy+2), (cx, cy+1)),     # Left 1
-            ((cx, cy+1), (cx, cy))        # Left 2
+            ((cx, cy), (cx+1, cy)),       
+            ((cx+1, cy), (cx+2, cy)),     
+            ((cx+2, cy), (cx+2, cy+1)),   
+            ((cx+2, cy+1), (cx+2, cy+2)), 
+            ((cx+2, cy+2), (cx+1, cy+2)), 
+            ((cx+1, cy+2), (cx, cy+2)),   
+            ((cx, cy+2), (cx, cy+1)),     
+            ((cx, cy+1), (cx, cy))        
         ]
         
         for edge in cell_edges:
@@ -177,7 +222,7 @@ def apply_geometry(img, rot, stretch_x, stretch_y):
         
     return res.rotate(rot, expand=True, resample=Image.BICUBIC)
 
-def apply_noise_np(img, intensity=20):
+def apply_noise_np(img, intensity):
     if intensity <= 0: return img
     arr = np.array(img).astype('float32')
     if arr.shape[2] == 4:
@@ -222,7 +267,7 @@ def calculate_brightness_adjustment(bg_img, panel_geom_img, px, py):
     panel_arr = np.array(panel_geom_img.convert("RGBA"), dtype=np.float32)
     
     alpha = panel_arr[:, :, 3]
-    mask = alpha > 10 
+    mask = alpha > ALPHA_MASK_THRESHOLD 
     
     if not np.any(mask): return 1.0
         
@@ -235,7 +280,7 @@ def calculate_brightness_adjustment(bg_img, panel_geom_img, px, py):
     if panel_lum < 1.0: panel_lum = 1.0 
     
     factor = bg_lum / panel_lum
-    return max(0.2, min(factor, 3.0))
+    return max(BRIGHTNESS_CLAMP_MIN, min(factor, BRIGHTNESS_CLAMP_MAX))
 
 def rotate_point(x, y, cx, cy, angle_rad):
     tx, ty = x - cx, y - cy
@@ -249,9 +294,12 @@ def generate_dataset_variants(original_img, original_labels_poly, base_name):
     img_aug = original_img.copy()
     labels_aug = [(cls, list(pts)) for cls, pts in original_labels_poly]
 
-    img_aug = apply_noise_np(img_aug, random.randint(10, 20))
+    img_aug = apply_noise_np(img_aug, random.randint(GLOBAL_NOISE_MIN, GLOBAL_NOISE_MAX))
 
-    angle = random.choice([random.randint(-15, -5), random.randint(5, 15)])
+    angle = random.choice([
+        random.randint(GLOBAL_ROT_RANGE_NEG[0], GLOBAL_ROT_RANGE_NEG[1]), 
+        random.randint(GLOBAL_ROT_RANGE_POS[0], GLOBAL_ROT_RANGE_POS[1])
+    ])
     
     img_aug = img_aug.rotate(angle, resample=Image.BICUBIC, expand=False)
     angle_rad = math.radians(-angle)
@@ -277,12 +325,14 @@ def generate_dataset_variants(original_img, original_labels_poly, base_name):
             coords = " ".join([f"{p[0]:.6f} {p[1]:.6f}" for p in pts])
             f.write(f"{cls} {coords}\n")
 
+# ==============================================================================
 # --- GUI APPLICATION ---
+# ==============================================================================
 
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Generator (80% Flush / 20% Shifted)")
+        self.root.title("YOLOv8 Seg Generator (Configurable Constants)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -300,8 +350,7 @@ class YoloObbApp:
         self.last_x = 0
         self.last_y = 0
         
-        self.current_grid_shape = generate_random_grid(random.randint(2, 6))
-        self.current_size = random.randint(22, 44)
+        self.roll_new_geometry()
 
         self.setup_ui()
 
@@ -324,10 +373,11 @@ class YoloObbApp:
         
         info_font = ("Arial", 9, "bold")
         info_color = "#2e7d32"
-        tk.Label(ctrl, text="Rozmiar Pixeli i Kształt: ZABLOKOWANE DLA KLIKU", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
-        tk.Label(ctrl, text="Anizotropia (Skrót osi): LOSOWA PER PANEL", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
-        tk.Label(ctrl, text="Rozmycie (Blur): LOSOWE PER PANEL", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
-        tk.Label(ctrl, text="Obrót: LOSOWY PER PANEL", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
+        # UI text driven dynamically by the Constants block
+        tk.Label(ctrl, text=f"Rozmiar: LOSOWY ({PANEL_SIZE_MIN}-{PANEL_SIZE_MAX}px) ZABLOK.", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
+        tk.Label(ctrl, text=f"Anizotropia: LOSOWA ({STRETCH_MIN}-{STRETCH_MAX}x)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
+        tk.Label(ctrl, text=f"Rozmycie: LOSOWE ({BLUR_MIN}-{BLUR_MAX}px)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
+        tk.Label(ctrl, text=f"Obrót: LOSOWY ({ROT_MIN}° do {ROT_MAX}°)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         
         tk.Label(ctrl, text="Cień (Shadow): ZMIENNY KIERUNEK", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold", "italic")).pack(anchor="w", pady=(8,2))
         tk.Label(ctrl, text="Jasność: DOPASOWANA DO TŁA", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold", "italic")).pack(anchor="w", pady=2)
@@ -359,7 +409,7 @@ class YoloObbApp:
         self.root.bind("<space>", self.on_space)
 
     def load_bg_folder(self):
-        folder = 'C:/Users/admin/Desktop/inference_data/Inference_data/mck26'
+        folder = DEFAULT_BG_FOLDER
         if folder:
             self.bg_images = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
             if self.bg_images:
@@ -369,8 +419,7 @@ class YoloObbApp:
                 messagebox.showwarning("Pusto", "Brak obrazów w folderze.")
 
     def load_panel_folder(self):
-        folder = './pvs'
-        folder = './dark_pvs'
+        folder = DEFAULT_PANEL_FOLDER
         if folder:
             self.panel_images = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
             if self.panel_images:
@@ -410,11 +459,11 @@ class YoloObbApp:
             self.draw_ghost()
             
     def roll_new_geometry(self):
-        self.current_grid_shape = generate_random_grid(random.randint(2, 6))
-        self.current_size = random.randint(22, 44)
+        self.current_grid_shape = generate_random_grid(random.randint(GRID_CELLS_MIN, GRID_CELLS_MAX))
+        self.current_size = random.randint(PANEL_SIZE_MIN, PANEL_SIZE_MAX)
 
     def _get_scaled_preview_panel(self):
-        scale_factor = self.current_size / max(self.preview_panel_img.size)
+        scale_factor = UI_GHOST_SCALE_BASE / max(self.preview_panel_img.size)
         scaled_w = max(2, int(self.preview_panel_img.width * scale_factor))
         scaled_w = (scaled_w // 2) * 2 
         scaled_h = max(2, int(self.preview_panel_img.height * scale_factor))
@@ -437,13 +486,13 @@ class YoloObbApp:
         
         processed_ov = apply_photometry(img_geom, auto_bright, 0, 0.0)
         
-        shadow_img, pad = create_shadow(processed_ov, blur_radius=4.0, opacity=0.35)
+        shadow_img, pad = create_shadow(processed_ov, blur_radius=UI_SHADOW_BLUR, opacity=UI_SHADOW_OPACITY)
         
         self.tk_shadow = ImageTk.PhotoImage(shadow_img)
         self.tk_preview = ImageTk.PhotoImage(processed_ov)
         
-        shadow_offset_x = 4
-        shadow_offset_y = 4
+        shadow_offset_x = UI_SHADOW_OFFSET
+        shadow_offset_y = UI_SHADOW_OFFSET
         
         self.canvas.create_image(self.last_x + shadow_offset_x, self.last_y + shadow_offset_y, image=self.tk_shadow, tag="ghost")
         self.canvas.create_image(self.last_x, self.last_y, image=self.tk_preview, tag="ghost")
@@ -493,9 +542,9 @@ class YoloObbApp:
         auto_bright = calculate_brightness_adjustment(self.base_img, img_geom, px, py)
         img_rot = apply_photometry(img_geom, auto_bright, 0, 0.0)
         
-        shadow_img, pad = create_shadow(img_rot, blur_radius=4.0, opacity=0.35)
-        shadow_px = px + 4 - pad
-        shadow_py = py + 4 - pad
+        shadow_img, pad = create_shadow(img_rot, blur_radius=UI_SHADOW_BLUR, opacity=UI_SHADOW_OPACITY)
+        shadow_px = px + UI_SHADOW_OFFSET - pad
+        shadow_py = py + UI_SHADOW_OFFSET - pad
         self.work_img.paste(shadow_img, (shadow_px, shadow_py), mask=shadow_img)
         
         self.work_img.paste(img_rot, (px, py), mask=img_rot)
@@ -536,16 +585,16 @@ class YoloObbApp:
                     cell_w = p['cell_w']
                     cell_h = p['cell_h']
                     
-                    auto_rot = random.randint(-180, 180)
-                    auto_noise = random.randint(0, 11)
-                    auto_stretch_x = random.uniform(0.8, 1.2)
-                    auto_stretch_y = random.uniform(0.8, 1.2)
-                    auto_blur = random.uniform(0.0, 1.0)
+                    auto_rot = random.randint(ROT_MIN, ROT_MAX)
+                    auto_noise = random.randint(NOISE_MIN, NOISE_MAX)
+                    auto_stretch_x = random.uniform(STRETCH_MIN, STRETCH_MAX)
+                    auto_stretch_y = random.uniform(STRETCH_MIN, STRETCH_MAX)
+                    auto_blur = random.uniform(BLUR_MIN, BLUR_MAX)
                     
-                    sh_off_x = random.randint(2, 6)
-                    sh_off_y = random.randint(2, 6)
-                    sh_blur = random.uniform(3.0, 6.0)
-                    sh_opacity = random.uniform(0.2, 0.5)
+                    sh_off_x = random.randint(SHADOW_OFFSET_MIN, SHADOW_OFFSET_MAX)
+                    sh_off_y = random.randint(SHADOW_OFFSET_MIN, SHADOW_OFFSET_MAX)
+                    sh_blur = random.uniform(SHADOW_BLUR_MIN, SHADOW_BLUR_MAX)
+                    sh_opacity = random.uniform(SHADOW_OPACITY_MIN, SHADOW_OPACITY_MAX)
                     
                     scaled_panel = panel_img.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
                     
@@ -589,16 +638,16 @@ class YoloObbApp:
                 cell_w = p['cell_w']
                 cell_h = p['cell_h']
                 
-                auto_rot = random.randint(-180, 180)
-                auto_noise = random.randint(0, 11)
-                auto_stretch_x = random.uniform(0.8, 1.2)
-                auto_stretch_y = random.uniform(0.8, 1.2)
-                auto_blur = random.uniform(0.0, 1.0)
+                auto_rot = random.randint(ROT_MIN, ROT_MAX)
+                auto_noise = random.randint(NOISE_MIN, NOISE_MAX)
+                auto_stretch_x = random.uniform(STRETCH_MIN, STRETCH_MAX)
+                auto_stretch_y = random.uniform(STRETCH_MIN, STRETCH_MAX)
+                auto_blur = random.uniform(BLUR_MIN, BLUR_MAX)
                 
-                sh_off_x = random.randint(2, 6)
-                sh_off_y = random.randint(2, 6)
-                sh_blur = random.uniform(3.0, 6.0)
-                sh_opacity = random.uniform(0.2, 0.5)
+                sh_off_x = random.randint(SHADOW_OFFSET_MIN, SHADOW_OFFSET_MAX)
+                sh_off_y = random.randint(SHADOW_OFFSET_MIN, SHADOW_OFFSET_MAX)
+                sh_blur = random.uniform(SHADOW_BLUR_MIN, SHADOW_BLUR_MAX)
+                sh_opacity = random.uniform(SHADOW_OPACITY_MIN, SHADOW_OPACITY_MAX)
                 
                 scaled_panel_mix = panel_img_mix.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
                 

@@ -8,16 +8,21 @@ import math
 import random
 import json
 import copy
+import shutil
 
 # ==============================================================================
 # --- CONFIGURATION CONSTANTS ---
 # ==============================================================================
 
+# Global Seed for Reproducibility (Set to None for unpredictable randomness)
+RANDOM_SEED = 42
+
 # Directories
-OUTPUT_BASE_DIR = "dataset_yolo_seg22"
+OUTPUT_BASE_DIR = "dataset_yolo_seg31"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 META_DIR = os.path.join(OUTPUT_BASE_DIR, "meta")
+REAL_DIR = os.path.join(OUTPUT_BASE_DIR, "rzeczywiste")
 
 DEFAULT_BG_FOLDER = 'C:/Users/admin/Desktop/inference_data/Inference_data/mck26'
 DEFAULT_PANEL_FOLDER = './pvs'
@@ -66,6 +71,11 @@ UI_SHADOW_BLUR = 4.0
 UI_SHADOW_OPACITY = 0.35
 UI_SHADOW_OFFSET = 4
 
+# Apply Seed globally if defined
+if RANDOM_SEED is not None:
+    random.seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+
 # ==============================================================================
 # --- APPLICATION LOGIC ---
 # ==============================================================================
@@ -73,6 +83,7 @@ UI_SHADOW_OFFSET = 4
 os.makedirs(IMG_DIR, exist_ok=True)
 os.makedirs(LBL_DIR, exist_ok=True)
 os.makedirs(META_DIR, exist_ok=True)
+os.makedirs(REAL_DIR, exist_ok=True)
 
 def overlaps(c1, c2):
     return abs(c1[0] - c2[0]) < 2 and abs(c1[1] - c2[1]) < 2
@@ -282,6 +293,7 @@ def calculate_brightness_adjustment(bg_img, panel_geom_img, px, py):
     if panel_lum < 1.0: panel_lum = 1.0 
     
     factor = bg_lum / panel_lum
+    # Return unmodified numpy float32, let the JSON parser handle the cast later
     return max(BRIGHTNESS_CLAMP_MIN, min(factor, BRIGHTNESS_CLAMP_MAX))
 
 def rotate_point(x, y, cx, cy, angle_rad):
@@ -328,7 +340,6 @@ def generate_dataset_variants(original_img, original_labels_poly, base_panel_aug
             coords = " ".join([f"{p[0]:.6f} {p[1]:.6f}" for p in pts])
             f.write(f"{cls} {coords}\n")
             
-    # Save corresponding JSON metadata for the augmented variant
     aug_data = {
         "global_augmentations": {
             "noise": global_noise_val,
@@ -346,7 +357,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_panel_aug
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Generator (JSON Metadata Logging)")
+        self.root.title("YOLOv8 Seg Generator (JSON Fix + Rzeczywiste)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -382,6 +393,7 @@ class YoloObbApp:
         self.lbl_bg_info.pack()
         
         tk.Button(ctrl, text="Pomiń Tło (Bez zapisu) ->", command=self.skip_bg, bg="#ff9999").pack(fill=tk.X, pady=5)
+        tk.Button(ctrl, text="Oznacz jako 'Rzeczywiste' i pomiń", command=self.mark_as_real, bg="#64b5f6", fg="white", font=("Arial", 9, "bold")).pack(fill=tk.X, pady=5)
 
         tk.Label(ctrl, text="--- Parametry Generacji ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
         
@@ -459,6 +471,19 @@ class YoloObbApp:
     def skip_bg(self):
         self.lbl_status.config(text="Pominięto tło.")
         self.next_bg()
+        
+    def mark_as_real(self):
+        if not self.bg_images: return
+        current_bg_path = self.bg_images[self.current_bg_idx]
+        filename = os.path.basename(current_bg_path)
+        dest_path = os.path.join(REAL_DIR, filename)
+        
+        try:
+            shutil.copy2(current_bg_path, dest_path)
+            self.lbl_status.config(text=f"Skopiowano do 'rzeczywiste': {filename}")
+            self.root.after(500, self.next_bg) 
+        except Exception as e:
+            messagebox.showerror("Błąd", f"Nie udało się skopiować: {str(e)}")
 
     def check_ready_state(self):
         if self.base_img and self.panel_images:
@@ -640,16 +665,16 @@ class YoloObbApp:
                         "grid_cells": len(grid_shape),
                         "locked_size": p['size'],
                         "rotation_deg": auto_rot,
-                        "stretch_x": round(auto_stretch_x, 3),
-                        "stretch_y": round(auto_stretch_y, 3),
+                        "stretch_x": round(float(auto_stretch_x), 3),
+                        "stretch_y": round(float(auto_stretch_y), 3),
                         "noise_intensity": auto_noise,
-                        "blur_radius": round(auto_blur, 3),
-                        "brightness_match_multiplier": round(auto_bright, 3),
+                        "blur_radius": round(float(auto_blur), 3),
+                        "brightness_match_multiplier": round(float(auto_bright), 3), # CASTED HERE
                         "shadow": {
                             "offset_x": sh_off_x,
                             "offset_y": sh_off_y,
-                            "blur_radius": round(sh_blur, 3),
-                            "opacity": round(sh_opacity, 3)
+                            "blur_radius": round(float(sh_blur), 3),
+                            "opacity": round(float(sh_opacity), 3)
                         }
                     })
                 
@@ -716,16 +741,16 @@ class YoloObbApp:
                     "grid_cells": len(grid_shape),
                     "locked_size": p['size'],
                     "rotation_deg": auto_rot,
-                    "stretch_x": round(auto_stretch_x, 3),
-                    "stretch_y": round(auto_stretch_y, 3),
+                    "stretch_x": round(float(auto_stretch_x), 3),
+                    "stretch_y": round(float(auto_stretch_y), 3),
                     "noise_intensity": auto_noise,
-                    "blur_radius": round(auto_blur, 3),
-                    "brightness_match_multiplier": round(auto_bright_mix, 3),
+                    "blur_radius": round(float(auto_blur), 3),
+                    "brightness_match_multiplier": round(float(auto_bright_mix), 3), # CASTED HERE
                     "shadow": {
                         "offset_x": sh_off_x,
                         "offset_y": sh_off_y,
-                        "blur_radius": round(sh_blur, 3),
-                        "opacity": round(sh_opacity, 3)
+                        "blur_radius": round(float(sh_blur), 3),
+                        "opacity": round(float(sh_opacity), 3)
                     }
                 })
                 

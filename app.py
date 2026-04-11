@@ -6,6 +6,8 @@ import os
 import uuid
 import math
 import random
+import json
+import copy
 
 # ==============================================================================
 # --- CONFIGURATION CONSTANTS ---
@@ -13,6 +15,10 @@ import random
 
 # Directories
 OUTPUT_BASE_DIR = "dataset_yolo_seg22"
+IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
+LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
+META_DIR = os.path.join(OUTPUT_BASE_DIR, "meta")
+
 DEFAULT_BG_FOLDER = 'C:/Users/admin/Desktop/inference_data/Inference_data/mck26'
 DEFAULT_PANEL_FOLDER = './pvs'
 
@@ -64,18 +70,14 @@ UI_SHADOW_OFFSET = 4
 # --- APPLICATION LOGIC ---
 # ==============================================================================
 
-IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
-LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
-
 os.makedirs(IMG_DIR, exist_ok=True)
 os.makedirs(LBL_DIR, exist_ok=True)
+os.makedirs(META_DIR, exist_ok=True)
 
 def overlaps(c1, c2):
-    """Checks if two 2x2 logical cells overlap."""
     return abs(c1[0] - c2[0]) < 2 and abs(c1[1] - c2[1]) < 2
 
 def generate_random_grid(num_cells):
-    """Generates a random contiguous shape (polyomino) based on grid shift probability."""
     if num_cells <= 1: return [(0, 0)]
     cells = [(0, 0)]
     
@@ -288,13 +290,14 @@ def rotate_point(x, y, cx, cy, angle_rad):
     ry = tx * math.sin(angle_rad) + ty * math.cos(angle_rad)
     return rx + cx, ry + cy
 
-def generate_dataset_variants(original_img, original_labels_poly, base_name):
+def generate_dataset_variants(original_img, original_labels_poly, base_panel_augs, base_name):
     w_img, h_img = original_img.size
     
     img_aug = original_img.copy()
     labels_aug = [(cls, list(pts)) for cls, pts in original_labels_poly]
 
-    img_aug = apply_noise_np(img_aug, random.randint(GLOBAL_NOISE_MIN, GLOBAL_NOISE_MAX))
+    global_noise_val = random.randint(GLOBAL_NOISE_MIN, GLOBAL_NOISE_MAX)
+    img_aug = apply_noise_np(img_aug, global_noise_val)
 
     angle = random.choice([
         random.randint(GLOBAL_ROT_RANGE_NEG[0], GLOBAL_ROT_RANGE_NEG[1]), 
@@ -324,6 +327,17 @@ def generate_dataset_variants(original_img, original_labels_poly, base_name):
         for cls, pts in labels_aug:
             coords = " ".join([f"{p[0]:.6f} {p[1]:.6f}" for p in pts])
             f.write(f"{cls} {coords}\n")
+            
+    # Save corresponding JSON metadata for the augmented variant
+    aug_data = {
+        "global_augmentations": {
+            "noise": global_noise_val,
+            "rotation_deg": angle
+        },
+        "panels": copy.deepcopy(base_panel_augs)
+    }
+    with open(os.path.join(META_DIR, f"{f_name}.json"), "w") as f:
+        json.dump(aug_data, f, indent=4)
 
 # ==============================================================================
 # --- GUI APPLICATION ---
@@ -332,7 +346,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_name):
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Generator (Configurable Constants)")
+        self.root.title("YOLOv8 Seg Generator (JSON Metadata Logging)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -373,7 +387,6 @@ class YoloObbApp:
         
         info_font = ("Arial", 9, "bold")
         info_color = "#2e7d32"
-        # UI text driven dynamically by the Constants block
         tk.Label(ctrl, text=f"Rozmiar: LOSOWY ({PANEL_SIZE_MIN}-{PANEL_SIZE_MAX}px) ZABLOK.", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         tk.Label(ctrl, text=f"Anizotropia: LOSOWA ({STRETCH_MIN}-{STRETCH_MAX}x)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         tk.Label(ctrl, text=f"Rozmycie: LOSOWE ({BLUR_MIN}-{BLUR_MAX}px)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
@@ -573,12 +586,17 @@ class YoloObbApp:
             empty_base_name = f"bg{self.current_bg_idx}_empty_{uuid.uuid4().hex[:4]}"
             self.base_img.convert("RGB").save(os.path.join(IMG_DIR, f"{empty_base_name}.jpg"))
             open(os.path.join(LBL_DIR, f"{empty_base_name}.txt"), "w").close() 
+            
+            empty_aug_data = {"global_augmentations": {}, "panels": []}
+            with open(os.path.join(META_DIR, f"{empty_base_name}.json"), "w") as f:
+                json.dump(empty_aug_data, f, indent=4)
 
             # 2. Base Panels Variants
             for p_idx, panel_path in enumerate(self.panel_images):
                 panel_img = Image.open(panel_path).convert("RGBA")
                 out_img = self.base_img.copy() 
                 labels_poly = []
+                panel_augs = []
                 
                 for p in self.placements:
                     grid_shape = p['grid_shape']
@@ -616,19 +634,42 @@ class YoloObbApp:
                     trans_poly = transform_polygon(base_poly, p['cx'], p['cy'], auto_rot, auto_stretch_x, auto_stretch_y)
                     norm_poly = normalize_polygon(trans_poly, out_img.width, out_img.height)
                     labels_poly.append((0, norm_poly))
+                    
+                    panel_augs.append({
+                        "class_id": 0,
+                        "grid_cells": len(grid_shape),
+                        "locked_size": p['size'],
+                        "rotation_deg": auto_rot,
+                        "stretch_x": round(auto_stretch_x, 3),
+                        "stretch_y": round(auto_stretch_y, 3),
+                        "noise_intensity": auto_noise,
+                        "blur_radius": round(auto_blur, 3),
+                        "brightness_match_multiplier": round(auto_bright, 3),
+                        "shadow": {
+                            "offset_x": sh_off_x,
+                            "offset_y": sh_off_y,
+                            "blur_radius": round(sh_blur, 3),
+                            "opacity": round(sh_opacity, 3)
+                        }
+                    })
                 
                 base_name = f"bg{self.current_bg_idx}_pnl{p_idx}_{uuid.uuid4().hex[:4]}"
-                out_img.convert("RGB").save(os.path.join(IMG_DIR, f"{base_name}.jpg"))
+                out_img.convert("RGB").save(os.path.join(IMG_DIR, f"{base_name}.jpg"), quality=95)
                 with open(os.path.join(LBL_DIR, f"{base_name}.txt"), "w") as f:
                     for cls, pts in labels_poly:
                         coords = " ".join([f"{pt[0]:.6f} {pt[1]:.6f}" for pt in pts])
                         f.write(f"{cls} {coords}\n")
+                        
+                base_aug_data = {"global_augmentations": {}, "panels": panel_augs}
+                with open(os.path.join(META_DIR, f"{base_name}.json"), "w") as f:
+                    json.dump(base_aug_data, f, indent=4)
                 
-                generate_dataset_variants(out_img, labels_poly, base_name)
+                generate_dataset_variants(out_img, labels_poly, panel_augs, base_name)
                 
             # 3. MIX Variant
             out_img_mix = self.base_img.copy()
             labels_poly_mix = []
+            panel_augs_mix = []
             
             for p in self.placements:
                 random_panel_path = random.choice(self.panel_images)
@@ -670,6 +711,24 @@ class YoloObbApp:
                 norm_poly_mix = normalize_polygon(trans_poly_mix, out_img_mix.width, out_img_mix.height)
                 labels_poly_mix.append((0, norm_poly_mix))
                 
+                panel_augs_mix.append({
+                    "class_id": 0,
+                    "grid_cells": len(grid_shape),
+                    "locked_size": p['size'],
+                    "rotation_deg": auto_rot,
+                    "stretch_x": round(auto_stretch_x, 3),
+                    "stretch_y": round(auto_stretch_y, 3),
+                    "noise_intensity": auto_noise,
+                    "blur_radius": round(auto_blur, 3),
+                    "brightness_match_multiplier": round(auto_bright_mix, 3),
+                    "shadow": {
+                        "offset_x": sh_off_x,
+                        "offset_y": sh_off_y,
+                        "blur_radius": round(sh_blur, 3),
+                        "opacity": round(sh_opacity, 3)
+                    }
+                })
+                
             base_name_mix = f"bg{self.current_bg_idx}_mix_{uuid.uuid4().hex[:4]}"
             out_img_mix.convert("RGB").save(os.path.join(IMG_DIR, f"{base_name_mix}.jpg"))
             with open(os.path.join(LBL_DIR, f"{base_name_mix}.txt"), "w") as f:
@@ -677,7 +736,11 @@ class YoloObbApp:
                     coords = " ".join([f"{pt[0]:.6f} {pt[1]:.6f}" for pt in pts])
                     f.write(f"{cls} {coords}\n")
                     
-            generate_dataset_variants(out_img_mix, labels_poly_mix, base_name_mix)
+            mix_aug_data = {"global_augmentations": {}, "panels": panel_augs_mix}
+            with open(os.path.join(META_DIR, f"{base_name_mix}.json"), "w") as f:
+                json.dump(mix_aug_data, f, indent=4)
+                    
+            generate_dataset_variants(out_img_mix, labels_poly_mix, panel_augs_mix, base_name_mix)
                 
             self.lbl_status.config(text="Zapisano pomyślnie. Ładowanie kolejnego tła...")
             self.root.after(77, self.next_bg) 

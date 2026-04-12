@@ -3,7 +3,6 @@ from tkinter import messagebox
 from PIL import Image, ImageTk, ImageEnhance, ImageFilter
 import numpy as np
 import os
-import uuid
 import math
 import random
 import json
@@ -18,7 +17,7 @@ import shutil
 RANDOM_SEED = 42
 
 # Directories
-OUTPUT_BASE_DIR = "dataset_yolo_seg31"
+OUTPUT_BASE_DIR = "dataset_yolo_seg32"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 META_DIR = os.path.join(OUTPUT_BASE_DIR, "meta")
@@ -292,9 +291,8 @@ def calculate_brightness_adjustment(bg_img, panel_geom_img, px, py):
     
     if panel_lum < 1.0: panel_lum = 1.0 
     
-    factor = bg_lum / panel_lum
-    # Return unmodified numpy float32, let the JSON parser handle the cast later
-    return max(BRIGHTNESS_CLAMP_MIN, min(factor, BRIGHTNESS_CLAMP_MAX))
+    factor = float(bg_lum) / float(panel_lum)
+    return float(max(BRIGHTNESS_CLAMP_MIN, min(factor, BRIGHTNESS_CLAMP_MAX)))
 
 def rotate_point(x, y, cx, cy, angle_rad):
     tx, ty = x - cx, y - cy
@@ -332,7 +330,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_panel_aug
         new_labels.append((cls, new_pts))
     labels_aug = new_labels
 
-    f_name = f"{base_name}_aug1"
+    f_name = f"{base_name}_aug"
     img_aug.convert("RGB").save(os.path.join(IMG_DIR, f"{f_name}.jpg"), quality=95)
     
     with open(os.path.join(LBL_DIR, f"{f_name}.txt"), "w") as f:
@@ -357,7 +355,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_panel_aug
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Generator (JSON Fix + Rzeczywiste)")
+        self.root.title("YOLOv8 Seg Generator (Original Filename Based)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -374,6 +372,8 @@ class YoloObbApp:
         
         self.last_x = 0
         self.last_y = 0
+        
+        self.saved_empty_bgs = set()
         
         self.roll_new_geometry()
 
@@ -607,14 +607,21 @@ class YoloObbApp:
         self.root.update()
         
         try:
-            # 1. Negative Sample
-            empty_base_name = f"bg{self.current_bg_idx}_empty_{uuid.uuid4().hex[:4]}"
-            self.base_img.convert("RGB").save(os.path.join(IMG_DIR, f"{empty_base_name}.jpg"))
-            open(os.path.join(LBL_DIR, f"{empty_base_name}.txt"), "w").close() 
-            
-            empty_aug_data = {"global_augmentations": {}, "panels": []}
-            with open(os.path.join(META_DIR, f"{empty_base_name}.json"), "w") as f:
-                json.dump(empty_aug_data, f, indent=4)
+            # Extract Original Filename (without extension)
+            current_bg_path = self.bg_images[self.current_bg_idx]
+            original_filename = os.path.splitext(os.path.basename(current_bg_path))[0]
+
+            # 1. Negative Sample (Saved ONLY ONCE per unique background image session)
+            if current_bg_path not in self.saved_empty_bgs:
+                empty_base_name = f"{original_filename}_empty"
+                self.base_img.convert("RGB").save(os.path.join(IMG_DIR, f"{empty_base_name}.jpg"))
+                open(os.path.join(LBL_DIR, f"{empty_base_name}.txt"), "w").close() 
+                
+                empty_aug_data = {"global_augmentations": {}, "panels": []}
+                with open(os.path.join(META_DIR, f"{empty_base_name}.json"), "w") as f:
+                    json.dump(empty_aug_data, f, indent=4)
+                    
+                self.saved_empty_bgs.add(current_bg_path)
 
             # 2. Base Panels Variants
             for p_idx, panel_path in enumerate(self.panel_images):
@@ -669,7 +676,7 @@ class YoloObbApp:
                         "stretch_y": round(float(auto_stretch_y), 3),
                         "noise_intensity": auto_noise,
                         "blur_radius": round(float(auto_blur), 3),
-                        "brightness_match_multiplier": round(float(auto_bright), 3), # CASTED HERE
+                        "brightness_match_multiplier": round(float(auto_bright), 3),
                         "shadow": {
                             "offset_x": sh_off_x,
                             "offset_y": sh_off_y,
@@ -678,7 +685,7 @@ class YoloObbApp:
                         }
                     })
                 
-                base_name = f"bg{self.current_bg_idx}_pnl{p_idx}_{uuid.uuid4().hex[:4]}"
+                base_name = f"{original_filename}_pnl{p_idx}"
                 out_img.convert("RGB").save(os.path.join(IMG_DIR, f"{base_name}.jpg"), quality=95)
                 with open(os.path.join(LBL_DIR, f"{base_name}.txt"), "w") as f:
                     for cls, pts in labels_poly:
@@ -745,7 +752,7 @@ class YoloObbApp:
                     "stretch_y": round(float(auto_stretch_y), 3),
                     "noise_intensity": auto_noise,
                     "blur_radius": round(float(auto_blur), 3),
-                    "brightness_match_multiplier": round(float(auto_bright_mix), 3), # CASTED HERE
+                    "brightness_match_multiplier": round(float(auto_bright_mix), 3),
                     "shadow": {
                         "offset_x": sh_off_x,
                         "offset_y": sh_off_y,
@@ -754,7 +761,7 @@ class YoloObbApp:
                     }
                 })
                 
-            base_name_mix = f"bg{self.current_bg_idx}_mix_{uuid.uuid4().hex[:4]}"
+            base_name_mix = f"{original_filename}_mix"
             out_img_mix.convert("RGB").save(os.path.join(IMG_DIR, f"{base_name_mix}.jpg"))
             with open(os.path.join(LBL_DIR, f"{base_name_mix}.txt"), "w") as f:
                 for cls, pts in labels_poly_mix:

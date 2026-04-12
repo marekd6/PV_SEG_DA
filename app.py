@@ -3,6 +3,7 @@ from tkinter import messagebox
 from PIL import Image, ImageTk, ImageEnhance, ImageFilter
 import numpy as np
 import os
+import uuid
 import math
 import random
 import json
@@ -355,7 +356,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_panel_aug
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Generator (Original Filename Based)")
+        self.root.title("YOLOv8 Seg Generator (Smart Resume)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -436,12 +437,32 @@ class YoloObbApp:
     def load_bg_folder(self):
         folder = DEFAULT_BG_FOLDER
         if folder:
-            self.bg_images = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            all_files = [f for f in os.listdir(folder) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            
+            existing_labels = os.listdir(LBL_DIR) if os.path.exists(LBL_DIR) else []
+            existing_reals = os.listdir(REAL_DIR) if os.path.exists(REAL_DIR) else []
+            
+            unprocessed = []
+            for f in all_files:
+                base_name = os.path.splitext(f)[0]
+                prefix = f"{base_name}_"
+                
+                # Check if this background has already been processed (has labels) or moved to 'rzeczywiste'
+                has_labels = any(lbl.startswith(prefix) for lbl in existing_labels)
+                is_real = f in existing_reals
+                
+                if not has_labels and not is_real:
+                    unprocessed.append(os.path.join(folder, f))
+            
+            self.bg_images = unprocessed
+            
             if self.bg_images:
                 self.current_bg_idx = 0
                 self.load_current_bg()
+                self.lbl_status.config(text=f"Wczytano {len(self.bg_images)} nowych tła (Pominięto przetworzone).")
             else:
-                messagebox.showwarning("Pusto", "Brak obrazów w folderze.")
+                self.lbl_bg_info.config(text="Tło: 0/0")
+                messagebox.showinfo("Gotowe", "Wszystkie tła w tym folderze zostały już przetworzone lub przeniesione!")
 
     def load_panel_folder(self):
         folder = DEFAULT_PANEL_FOLDER
@@ -481,7 +502,19 @@ class YoloObbApp:
         try:
             shutil.copy2(current_bg_path, dest_path)
             self.lbl_status.config(text=f"Skopiowano do 'rzeczywiste': {filename}")
-            self.root.after(500, self.next_bg) 
+            
+            # Remove from active list so we don't circle back to it
+            self.bg_images.pop(self.current_bg_idx)
+            
+            if self.bg_images:
+                # Keep index within bounds if we popped the last element
+                self.current_bg_idx = self.current_bg_idx % len(self.bg_images)
+                self.load_current_bg()
+            else:
+                self.canvas.delete("all")
+                self.lbl_bg_info.config(text="Tło: 0/0")
+                messagebox.showinfo("Koniec", "Nie ma więcej teł w kolejce.")
+                
         except Exception as e:
             messagebox.showerror("Błąd", f"Nie udało się skopiować: {str(e)}")
 
@@ -775,7 +808,18 @@ class YoloObbApp:
             generate_dataset_variants(out_img_mix, labels_poly_mix, panel_augs_mix, base_name_mix)
                 
             self.lbl_status.config(text="Zapisano pomyślnie. Ładowanie kolejnego tła...")
-            self.root.after(77, self.next_bg) 
+            
+            # Remove processed background from the active list
+            self.bg_images.pop(self.current_bg_idx)
+            
+            if self.bg_images:
+                # Keep index within bounds if we popped the last element
+                self.current_bg_idx = self.current_bg_idx % len(self.bg_images)
+                self.root.after(77, self.load_current_bg) 
+            else:
+                self.canvas.delete("all")
+                self.lbl_bg_info.config(text="Tło: 0/0")
+                messagebox.showinfo("Koniec", "Wszystkie tła zostały przetworzone!")
             
         except Exception as e:
             messagebox.showerror("Błąd", str(e))

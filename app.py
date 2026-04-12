@@ -66,7 +66,6 @@ BRIGHTNESS_CLAMP_MAX = 2.0
 ALPHA_MASK_THRESHOLD = 10
 
 # UI Ghost Preview Settings
-UI_GHOST_SCALE_BASE = 33
 UI_SHADOW_BLUR = 4.0
 UI_SHADOW_OPACITY = 0.35
 UI_SHADOW_OFFSET = 4
@@ -356,7 +355,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_panel_aug
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Generator (Circumcircle Preview)")
+        self.root.title("YOLOv8 Seg Generator (Fixed Scaled Circles)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -557,7 +556,8 @@ class YoloObbApp:
         self.current_size = random.randint(PANEL_SIZE_MIN, PANEL_SIZE_MAX)
 
     def _get_scaled_preview_panel(self):
-        scale_factor = UI_GHOST_SCALE_BASE / max(self.preview_panel_img.size)
+        # CRITICAL FIX: The preview scale now perfectly matches the exact rolled size for the placement
+        scale_factor = self.current_size / max(self.preview_panel_img.size)
         scaled_w = max(2, int(self.preview_panel_img.width * scale_factor))
         scaled_w = (scaled_w // 2) * 2 
         scaled_h = max(2, int(self.preview_panel_img.height * scale_factor))
@@ -592,6 +592,7 @@ class YoloObbApp:
         self.canvas.create_image(self.last_x, self.last_y, image=self.tk_preview, tag="ghost")
         
         # --- DRAW CIRCUMCIRCLE TO SHOW MAX ROTATION BOUNDARY ---
+        # Because we use self.current_size scaling above, this radius exactly matches the clicked radius
         poly = get_grid_polygon(self.current_grid_shape, scaled_panel.width, scaled_panel.height)
         if poly:
             max_radius = max(math.hypot(x, y) for x, y in poly)
@@ -627,13 +628,18 @@ class YoloObbApp:
         else:
             grid_shape_to_save = [(0, 0)]
             
+        # Calculate max radius for the permanent overlay BEFORE placing
+        poly = get_grid_polygon(grid_shape_to_save, cell_w, cell_h)
+        max_radius = max(math.hypot(x, y) for x, y in poly) if poly else 0
+            
         self.placements.append({
             'cx': cx, 
             'cy': cy, 
             'grid_shape': grid_shape_to_save,
             'cell_w': cell_w,
             'cell_h': cell_h,
-            'size': self.current_size
+            'size': self.current_size,
+            'max_radius': max_radius # Save for the UI redraw
         })
 
         scaled_panel = self._get_scaled_preview_panel()
@@ -663,6 +669,17 @@ class YoloObbApp:
         self.tk_bg = ImageTk.PhotoImage(self.work_img)
         self.canvas.delete("all")
         self.canvas.create_image(0, 0, image=self.tk_bg, anchor="nw")
+        
+        # Draw the permanent UI overlays for all placed objects
+        for p in self.placements:
+            cx, cy = p['cx'], p['cy']
+            r = p.get('max_radius', 0)
+            if r > 0:
+                self.canvas.create_oval(
+                    cx - r, cy - r,
+                    cx + r, cy + r,
+                    outline="#00ffff", dash=(4, 4), width=1, tags="overlay"
+                )
 
     def save_batch(self):
         if not self.placements or not self.panel_images: 

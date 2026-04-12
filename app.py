@@ -3,7 +3,6 @@ from tkinter import messagebox
 from PIL import Image, ImageTk, ImageEnhance, ImageFilter
 import numpy as np
 import os
-import uuid
 import math
 import random
 import json
@@ -17,12 +16,13 @@ import shutil
 # Global Seed for Reproducibility (Set to None for unpredictable randomness)
 RANDOM_SEED = 42
 
-# Directories
+# Directories & Files
 OUTPUT_BASE_DIR = "dataset_yolo_seg32"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 META_DIR = os.path.join(OUTPUT_BASE_DIR, "meta")
 REAL_DIR = os.path.join(OUTPUT_BASE_DIR, "rzeczywiste")
+SKIPPED_FILE = os.path.join(OUTPUT_BASE_DIR, "skipped.txt") # NEW TRACKING FILE
 
 DEFAULT_BG_FOLDER = 'C:/Users/admin/Desktop/inference_data/Inference_data/mck26'
 DEFAULT_PANEL_FOLDER = './pvs'
@@ -356,7 +356,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_panel_aug
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Generator (Smart Resume)")
+        self.root.title("YOLOv8 Seg Generator (Smart Resume & Skipped Tracking)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -393,7 +393,7 @@ class YoloObbApp:
         self.lbl_bg_info = tk.Label(ctrl, text="Tło: 0/0", bg="#dddddd")
         self.lbl_bg_info.pack()
         
-        tk.Button(ctrl, text="Pomiń Tło (Bez zapisu) ->", command=self.skip_bg, bg="#ff9999").pack(fill=tk.X, pady=5)
+        tk.Button(ctrl, text="Pomiń Tło (Trwale)", command=self.skip_bg, bg="#ff9999").pack(fill=tk.X, pady=5)
         tk.Button(ctrl, text="Oznacz jako 'Rzeczywiste' i pomiń", command=self.mark_as_real, bg="#64b5f6", fg="white", font=("Arial", 9, "bold")).pack(fill=tk.X, pady=5)
 
         tk.Label(ctrl, text="--- Parametry Generacji ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
@@ -442,16 +442,22 @@ class YoloObbApp:
             existing_labels = os.listdir(LBL_DIR) if os.path.exists(LBL_DIR) else []
             existing_reals = os.listdir(REAL_DIR) if os.path.exists(REAL_DIR) else []
             
+            # Load tracked skipped backgrounds into a set
+            skipped_bgs = set()
+            if os.path.exists(SKIPPED_FILE):
+                with open(SKIPPED_FILE, "r") as f_skip:
+                    skipped_bgs = set(line.strip() for line in f_skip if line.strip())
+            
             unprocessed = []
             for f in all_files:
                 base_name = os.path.splitext(f)[0]
                 prefix = f"{base_name}_"
                 
-                # Check if this background has already been processed (has labels) or moved to 'rzeczywiste'
                 has_labels = any(lbl.startswith(prefix) for lbl in existing_labels)
                 is_real = f in existing_reals
+                is_skipped = f in skipped_bgs
                 
-                if not has_labels and not is_real:
+                if not has_labels and not is_real and not is_skipped:
                     unprocessed.append(os.path.join(folder, f))
             
             self.bg_images = unprocessed
@@ -459,10 +465,10 @@ class YoloObbApp:
             if self.bg_images:
                 self.current_bg_idx = 0
                 self.load_current_bg()
-                self.lbl_status.config(text=f"Wczytano {len(self.bg_images)} nowych tła (Pominięto przetworzone).")
+                self.lbl_status.config(text=f"Wczytano {len(self.bg_images)} nowych tła (Pominięto przetworzone/wykluczone).")
             else:
                 self.lbl_bg_info.config(text="Tło: 0/0")
-                messagebox.showinfo("Gotowe", "Wszystkie tła w tym folderze zostały już przetworzone lub przeniesione!")
+                messagebox.showinfo("Gotowe", "Wszystkie tła w tym folderze zostały już przetworzone, skopiowane lub trwale pominięte!")
 
     def load_panel_folder(self):
         folder = DEFAULT_PANEL_FOLDER
@@ -490,8 +496,30 @@ class YoloObbApp:
         self.load_current_bg()
         
     def skip_bg(self):
-        self.lbl_status.config(text="Pominięto tło.")
-        self.next_bg()
+        if not self.bg_images: return
+        
+        current_bg_path = self.bg_images[self.current_bg_idx]
+        filename = os.path.basename(current_bg_path)
+        
+        # Append to skipped tracking file
+        try:
+            with open(SKIPPED_FILE, "a") as f_skip:
+                f_skip.write(filename + "\n")
+        except Exception as e:
+            print(f"Failed to write to skipped file: {e}")
+
+        self.lbl_status.config(text=f"Pominięto i trwale wykluczono: {filename}")
+        
+        # Remove from active list so it doesn't reappear in this session
+        self.bg_images.pop(self.current_bg_idx)
+        
+        if self.bg_images:
+            self.current_bg_idx = self.current_bg_idx % len(self.bg_images)
+            self.load_current_bg()
+        else:
+            self.canvas.delete("all")
+            self.lbl_bg_info.config(text="Tło: 0/0")
+            messagebox.showinfo("Koniec", "Nie ma więcej teł w kolejce.")
         
     def mark_as_real(self):
         if not self.bg_images: return
@@ -503,13 +531,11 @@ class YoloObbApp:
             shutil.copy2(current_bg_path, dest_path)
             self.lbl_status.config(text=f"Skopiowano do 'rzeczywiste': {filename}")
             
-            # Remove from active list so we don't circle back to it
             self.bg_images.pop(self.current_bg_idx)
             
             if self.bg_images:
-                # Keep index within bounds if we popped the last element
                 self.current_bg_idx = self.current_bg_idx % len(self.bg_images)
-                self.load_current_bg()
+                self.root.after(500, self.load_current_bg) 
             else:
                 self.canvas.delete("all")
                 self.lbl_bg_info.config(text="Tło: 0/0")
@@ -640,7 +666,6 @@ class YoloObbApp:
         self.root.update()
         
         try:
-            # Extract Original Filename (without extension)
             current_bg_path = self.bg_images[self.current_bg_idx]
             original_filename = os.path.splitext(os.path.basename(current_bg_path))[0]
 
@@ -813,7 +838,6 @@ class YoloObbApp:
             self.bg_images.pop(self.current_bg_idx)
             
             if self.bg_images:
-                # Keep index within bounds if we popped the last element
                 self.current_bg_idx = self.current_bg_idx % len(self.bg_images)
                 self.root.after(77, self.load_current_bg) 
             else:

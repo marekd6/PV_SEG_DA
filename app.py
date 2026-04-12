@@ -22,7 +22,7 @@ IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 META_DIR = os.path.join(OUTPUT_BASE_DIR, "meta")
 REAL_DIR = os.path.join(OUTPUT_BASE_DIR, "rzeczywiste")
-SKIPPED_FILE = os.path.join(OUTPUT_BASE_DIR, "skipped.txt") # NEW TRACKING FILE
+SKIPPED_FILE = os.path.join(OUTPUT_BASE_DIR, "skipped.txt") 
 
 DEFAULT_BG_FOLDER = 'C:/Users/admin/Desktop/inference_data/Inference_data/mck26'
 DEFAULT_PANEL_FOLDER = './pvs'
@@ -42,9 +42,9 @@ ROT_MAX = 180
 STRETCH_MIN = 0.8
 STRETCH_MAX = 1.2
 NOISE_MIN = 0
-NOISE_MAX = 50
+NOISE_MAX = 11
 BLUR_MIN = 0.0
-BLUR_MAX = 1.0
+BLUR_MAX = 0.6
 
 # Per-Panel Shadow Parameters
 SHADOW_OFFSET_MIN = 2
@@ -62,7 +62,7 @@ GLOBAL_ROT_RANGE_POS = (5, 15)
 
 # Photometry & Math settings
 BRIGHTNESS_CLAMP_MIN = 0.2
-BRIGHTNESS_CLAMP_MAX = 3.0
+BRIGHTNESS_CLAMP_MAX = 2.0
 ALPHA_MASK_THRESHOLD = 10
 
 # UI Ghost Preview Settings
@@ -356,7 +356,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_panel_aug
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Generator (Smart Resume & Skipped Tracking)")
+        self.root.title("YOLOv8 Seg Generator (Circumcircle Preview)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -442,7 +442,6 @@ class YoloObbApp:
             existing_labels = os.listdir(LBL_DIR) if os.path.exists(LBL_DIR) else []
             existing_reals = os.listdir(REAL_DIR) if os.path.exists(REAL_DIR) else []
             
-            # Load tracked skipped backgrounds into a set
             skipped_bgs = set()
             if os.path.exists(SKIPPED_FILE):
                 with open(SKIPPED_FILE, "r") as f_skip:
@@ -501,7 +500,6 @@ class YoloObbApp:
         current_bg_path = self.bg_images[self.current_bg_idx]
         filename = os.path.basename(current_bg_path)
         
-        # Append to skipped tracking file
         try:
             with open(SKIPPED_FILE, "a") as f_skip:
                 f_skip.write(filename + "\n")
@@ -510,7 +508,6 @@ class YoloObbApp:
 
         self.lbl_status.config(text=f"Pominięto i trwale wykluczono: {filename}")
         
-        # Remove from active list so it doesn't reappear in this session
         self.bg_images.pop(self.current_bg_idx)
         
         if self.bg_images:
@@ -593,6 +590,16 @@ class YoloObbApp:
         
         self.canvas.create_image(self.last_x + shadow_offset_x, self.last_y + shadow_offset_y, image=self.tk_shadow, tag="ghost")
         self.canvas.create_image(self.last_x, self.last_y, image=self.tk_preview, tag="ghost")
+        
+        # --- DRAW CIRCUMCIRCLE TO SHOW MAX ROTATION BOUNDARY ---
+        poly = get_grid_polygon(self.current_grid_shape, scaled_panel.width, scaled_panel.height)
+        if poly:
+            max_radius = max(math.hypot(x, y) for x, y in poly)
+            self.canvas.create_oval(
+                self.last_x - max_radius, self.last_y - max_radius,
+                self.last_x + max_radius, self.last_y + max_radius,
+                outline="#00ffff", dash=(4, 4), width=1, tags="ghost"
+            )
 
     def on_move(self, event):
         self.last_x, self.last_y = event.x, event.y
@@ -834,7 +841,6 @@ class YoloObbApp:
                 
             self.lbl_status.config(text="Zapisano pomyślnie. Ładowanie kolejnego tła...")
             
-            # Remove processed background from the active list
             self.bg_images.pop(self.current_bg_idx)
             
             if self.bg_images:

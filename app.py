@@ -30,7 +30,7 @@ DEFAULT_PANEL_FOLDER = './pvs'
 # Grid Generation
 GRID_CELLS_MIN = 2
 GRID_CELLS_MAX = 6
-GRID_SHIFT_PROBABILITY = 0.2  # 20% chance for a staggered (half-shift) grid layout
+GRID_SHIFT_PROBABILITY = 0.25  # 25% chance for a staggered (half-shift) grid layout
 
 # Panel Base Geometry (Locked per placement click)
 PANEL_SIZE_MIN = 22
@@ -42,9 +42,9 @@ ROT_MAX = 180
 STRETCH_MIN = 0.8
 STRETCH_MAX = 1.2
 NOISE_MIN = 0
-NOISE_MAX = 11
+NOISE_MAX = 6
 BLUR_MIN = 0.0
-BLUR_MAX = 0.6
+BLUR_MAX = 1.3
 
 # Per-Panel Shadow Parameters
 SHADOW_OFFSET_MIN = 2
@@ -55,8 +55,8 @@ SHADOW_OPACITY_MIN = 0.2
 SHADOW_OPACITY_MAX = 0.5
 
 # Global Image Extra Variant Augmentations
-GLOBAL_NOISE_MIN = 10
-GLOBAL_NOISE_MAX = 20
+GLOBAL_NOISE_MIN = 6
+GLOBAL_NOISE_MAX = 12
 GLOBAL_ROT_RANGE_NEG = (-15, -5)
 GLOBAL_ROT_RANGE_POS = (5, 15)
 
@@ -234,7 +234,7 @@ def apply_geometry(img, rot, stretch_x, stretch_y):
         
     return res.rotate(rot, expand=True, resample=Image.BICUBIC)
 
-def apply_noise_np(img, intensity):
+def apply_noise_np(img, intensity=5):
     if intensity <= 0: return img
     arr = np.array(img).astype('float32')
     if arr.shape[2] == 4:
@@ -862,7 +862,7 @@ class YoloObbApp:
             
             if self.bg_images:
                 self.current_bg_idx = self.current_bg_idx % len(self.bg_images)
-                self.root.after(77, self.load_current_bg) 
+                self.root.after(11, self.load_current_bg) 
             else:
                 self.canvas.delete("all")
                 self.lbl_bg_info.config(text="Tło: 0/0")

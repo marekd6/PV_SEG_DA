@@ -2,7 +2,6 @@ import tkinter as tk
 from tkinter import messagebox
 from PIL import Image, ImageTk, ImageEnhance, ImageFilter
 import numpy as np
-import cv2
 import os
 import math
 import random
@@ -48,8 +47,8 @@ BLUR_MIN = 0.0
 BLUR_MAX = 1.0
 
 # Global Background Shadow Parameters (Locked per background)
-SHADOW_LENGTH_MIN = 10.0
-SHADOW_LENGTH_MAX = 14.0
+SHADOW_LENGTH_MIN = 1.0
+SHADOW_LENGTH_MAX = 4.0
 SHADOW_BLUR_MIN = 2.0
 SHADOW_BLUR_MAX = 4.0
 
@@ -252,65 +251,40 @@ def apply_photometry(img, bright, noise, blur_radius):
         res = apply_noise_np(res, noise)
     return res
 
-# --- OPENCV HOUGH LINES SHADOW LOGIC ---
-def get_dominant_sun_direction(bg_img_pil):
-    """Calculates proper shadow direction from background lines."""
-    try:
-        img = np.array(bg_img_pil.convert('RGB'))
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-        _, thresh = cv2.threshold(gray, 60, 255, cv2.THRESH_BINARY_INV)
-        edges = cv2.Canny(thresh, 50, 150)
-        lines = cv2.HoughLines(edges, 1, np.pi/180, 100)
-
-        if lines is not None and len(lines) > 0:
-            angles = [theta for rho, theta in lines[:,0]]
-            dominant_angle = np.median(angles)
-            
-            # The shadow casts away from the sun, aligning with the line normal
-            dx = np.cos(dominant_angle)
-            dy = np.sin(dominant_angle)
-            return float(dx), float(dy)
-        else:
-            angle = random.uniform(0, 2 * math.pi)
-            print('random', angle)
-            return float(math.cos(angle)), float(math.sin(angle))
-    except Exception as e:
-        print(f"Failed to calculate sun direction, using default. Error: {e}")
-        return 1.0, 1.0
-
 def calculate_local_shadow_opacity(bg_img, px, py, pw, ph):
-    """Calculates shadow intensity based on local background contrast."""
-    bg_crop = bg_img.crop((px, py, px + pw, py + ph))
+    """Calculates shadow intensity based on local background contrast (standard deviation)."""
+    # Use safe bounds for cropping
+    px_safe = max(0, px)
+    py_safe = max(0, py)
+    pw_safe = min(bg_img.width, px + pw)
+    ph_safe = min(bg_img.height, py + ph)
+    
+    bg_crop = bg_img.crop((px_safe, py_safe, pw_safe, ph_safe))
     bg_arr = np.array(bg_crop.convert("L"), dtype=np.float32)
+    
+    if bg_arr.size == 0:
+        return 0.35 # Fallback if totally out of bounds
+        
     std = np.std(bg_arr) / 255.0
     intensity = 0.15 + 0.4 * std
     return float(max(0.1, min(intensity, 0.7)))
 
-def create_shadow_cv2(img, sun_dir, length, blur_radius, opacity):
-    """Generates an offset shadow using cv2.warpAffine."""
-    alpha = np.array(img.split()[3])
+def create_shadow(img, blur_radius, opacity):
+    """Generates a pure PIL shadow based on the rotated panel silhouette."""
+    pad = int(math.ceil(blur_radius)) * 2 + 2
+    padded_size = (img.width + pad * 2, img.height + pad * 2)
+    shadow = Image.new("RGBA", padded_size, (0, 0, 0, 0))
     
-    pad = int(math.ceil(blur_radius)) * 2 + int(math.ceil(length)) + 2
-    padded_alpha = np.pad(alpha, pad, mode='constant', constant_values=0)
+    alpha = img.split()[3]
+    alpha = alpha.point(lambda p: int(p * opacity))
     
-    dx, dy = sun_dir
-    shift_x = dx * length
-    shift_y = dy * length
-
-    M = np.float32([[1, 0, shift_x],
-                    [0, 1, shift_y]])
+    black = Image.new("RGBA", img.size, (0, 0, 0, 255))
+    black.putalpha(alpha)
     
-    shadow_mask = cv2.warpAffine(padded_alpha, M, (padded_alpha.shape[1], padded_alpha.shape[0]))
+    shadow.paste(black, (pad, pad))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(radius=blur_radius))
     
-    if blur_radius > 0:
-        shadow_mask = cv2.GaussianBlur(shadow_mask, (0, 0), blur_radius)
-        
-    shadow_mask = (shadow_mask * opacity).astype(np.uint8)
-    
-    shadow_rgba = np.zeros((shadow_mask.shape[0], shadow_mask.shape[1], 4), dtype=np.uint8)
-    shadow_rgba[..., 3] = shadow_mask 
-    
-    return Image.fromarray(shadow_rgba, 'RGBA'), pad
+    return shadow, pad
 
 def calculate_brightness_adjustment(bg_img, panel_geom_img, px, py):
     pw, ph = panel_geom_img.size
@@ -396,7 +370,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_panel_aug
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Generator (Strong Ghost Shadow)")
+        self.root.title("YOLOv8 Seg Generator (Random Robust Shadows)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -416,8 +390,9 @@ class YoloObbApp:
         
         self.saved_empty_bgs = set()
         
-        self.bg_sun_dir = (1.0, 1.0)
-        self.bg_shadow_length = 3.0
+        # Consistent Shadow settings for the current background
+        self.bg_shadow_dx = 2.0
+        self.bg_shadow_dy = 2.0
         self.bg_shadow_blur = 3.0
         
         self.roll_new_geometry()
@@ -449,7 +424,7 @@ class YoloObbApp:
         tk.Label(ctrl, text=f"Rozmycie: LOSOWE ({BLUR_MIN}-{BLUR_MAX}px)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         tk.Label(ctrl, text=f"Obrót: LOSOWY ({ROT_MIN}° do {ROT_MAX}°)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         
-        tk.Label(ctrl, text="Cień: SPÓJNY + KONTRAST LOKALNY", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold", "italic")).pack(anchor="w", pady=(8,2))
+        tk.Label(ctrl, text="Cień: SPÓJNY KIERUNEK + KONTRAST", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold", "italic")).pack(anchor="w", pady=(8,2))
         tk.Label(ctrl, text="Jasność: DOPASOWANA DO TŁA", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold", "italic")).pack(anchor="w", pady=2)
         
         tk.Label(ctrl, text="--- Sterowanie ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
@@ -531,8 +506,11 @@ class YoloObbApp:
         self.base_img = Image.open(p).convert("RGBA")
         self.lbl_bg_info.config(text=f"Tło: {self.current_bg_idx + 1} / {len(self.bg_images)}")
         
-        self.bg_sun_dir = get_dominant_sun_direction(self.base_img)
-        self.bg_shadow_length = random.uniform(SHADOW_LENGTH_MIN, SHADOW_LENGTH_MAX)
+        # Roll a completely random shadow angle/length for the new background, and lock it in.
+        angle = random.uniform(0, 2 * math.pi)
+        length = random.uniform(SHADOW_LENGTH_MIN, SHADOW_LENGTH_MAX)
+        self.bg_shadow_dx = math.cos(angle) * length
+        self.bg_shadow_dy = math.sin(angle) * length
         self.bg_shadow_blur = random.uniform(SHADOW_BLUR_MIN, SHADOW_BLUR_MAX)
         
         self.reset_canvas()
@@ -629,16 +607,18 @@ class YoloObbApp:
         
         processed_ov = apply_photometry(img_geom, auto_bright, 0, 0.0)
         
-        # Exaggerated strong shadow for the ghost preview to ensure visibility
-        ghost_shadow_opacity = 0.9
-        ghost_shadow_length = max(5.0, self.bg_shadow_length * 1.5)
-        
-        shadow_img, pad = create_shadow_cv2(processed_ov, self.bg_sun_dir, ghost_shadow_length, self.bg_shadow_blur, ghost_shadow_opacity)
+        # Exaggerated shadow for the ghost preview to ensure visibility
+        ghost_opacity = 0.9 
+        shadow_img, pad = create_shadow(processed_ov, blur_radius=self.bg_shadow_blur, opacity=ghost_opacity)
         
         self.tk_shadow = ImageTk.PhotoImage(shadow_img)
         self.tk_preview = ImageTk.PhotoImage(processed_ov)
         
-        self.canvas.create_image(self.last_x - pad, self.last_y - pad, image=self.tk_shadow, anchor="nw", tag="ghost")
+        # Apply the absolute background X/Y direction offset
+        shadow_x = self.last_x + self.bg_shadow_dx * 2.0  # Slightly extended length for UI clarity
+        shadow_y = self.last_y + self.bg_shadow_dy * 2.0
+        
+        self.canvas.create_image(shadow_x - pad, shadow_y - pad, image=self.tk_shadow, anchor="nw", tag="ghost")
         self.canvas.create_image(self.last_x, self.last_y, image=self.tk_preview, tag="ghost")
         
         poly = get_grid_polygon(self.current_grid_shape, scaled_panel.width, scaled_panel.height)
@@ -701,9 +681,12 @@ class YoloObbApp:
         
         sh_opacity = calculate_local_shadow_opacity(self.base_img, px, py, pw, ph)
         
-        shadow_img, pad = create_shadow_cv2(img_rot, self.bg_sun_dir, self.bg_shadow_length, self.bg_shadow_blur, sh_opacity)
-        self.work_img.paste(shadow_img, (px - pad, py - pad), mask=shadow_img)
+        shadow_img, pad = create_shadow(img_rot, blur_radius=self.bg_shadow_blur, opacity=sh_opacity)
         
+        shadow_px = px + self.bg_shadow_dx - pad
+        shadow_py = py + self.bg_shadow_dy - pad
+        
+        self.work_img.paste(shadow_img, (int(shadow_px), int(shadow_py)), mask=shadow_img)
         self.work_img.paste(img_rot, (px, py), mask=img_rot)
         
         self.redraw()
@@ -782,8 +765,13 @@ class YoloObbApp:
                     img_rot = apply_photometry(img_geom, auto_bright, auto_noise, auto_blur)
                     
                     sh_opacity = calculate_local_shadow_opacity(self.base_img, px, py, pw_comp, ph_comp)
-                    shadow_img, pad = create_shadow_cv2(img_rot, self.bg_sun_dir, self.bg_shadow_length, self.bg_shadow_blur, 0.9)
-                    out_img.paste(shadow_img, (px - pad, py - pad), mask=shadow_img)
+                    
+                    shadow_img, pad = create_shadow(img_rot, blur_radius=self.bg_shadow_blur, opacity=sh_opacity)
+                    
+                    shadow_px = px + self.bg_shadow_dx - pad
+                    shadow_py = py + self.bg_shadow_dy - pad
+                    
+                    out_img.paste(shadow_img, (int(shadow_px), int(shadow_py)), mask=shadow_img)
                     out_img.paste(img_rot, (px, py), mask=img_rot)
                     
                     base_poly = get_grid_polygon(grid_shape, cell_w, cell_h)
@@ -802,9 +790,8 @@ class YoloObbApp:
                         "blur_radius": round(float(auto_blur), 3),
                         "brightness_match_multiplier": round(float(auto_bright), 3),
                         "shadow": {
-                            "sun_dx": round(float(self.bg_sun_dir[0]), 3),
-                            "sun_dy": round(float(self.bg_sun_dir[1]), 3),
-                            "length": round(float(self.bg_shadow_length), 3),
+                            "offset_x": round(float(self.bg_shadow_dx), 3),
+                            "offset_y": round(float(self.bg_shadow_dy), 3),
                             "blur_radius": round(float(self.bg_shadow_blur), 3),
                             "opacity": round(float(sh_opacity), 3)
                         }
@@ -855,9 +842,13 @@ class YoloObbApp:
                 img_rot_mix = apply_photometry(img_geom_mix, auto_bright_mix, auto_noise, auto_blur)
                 
                 sh_opacity_mix = calculate_local_shadow_opacity(self.base_img, px_mix, py_mix, pw_comp_mix, ph_comp_mix)
-                shadow_img_mix, pad_mix = create_shadow_cv2(img_rot_mix, self.bg_sun_dir, self.bg_shadow_length, self.bg_shadow_blur, sh_opacity_mix)
                 
-                out_img_mix.paste(shadow_img_mix, (px_mix - pad_mix, py_mix - pad_mix), mask=shadow_img_mix)
+                shadow_img_mix, pad_mix = create_shadow(img_rot_mix, blur_radius=self.bg_shadow_blur, opacity=sh_opacity_mix)
+                
+                shadow_px_mix = px_mix + self.bg_shadow_dx - pad_mix
+                shadow_py_mix = py_mix + self.bg_shadow_dy - pad_mix
+                
+                out_img_mix.paste(shadow_img_mix, (int(shadow_px_mix), int(shadow_py_mix)), mask=shadow_img_mix)
                 out_img_mix.paste(img_rot_mix, (px_mix, py_mix), mask=img_rot_mix)
                 
                 base_poly_mix = get_grid_polygon(grid_shape, cell_w, cell_h)
@@ -876,9 +867,8 @@ class YoloObbApp:
                     "blur_radius": round(float(auto_blur), 3),
                     "brightness_match_multiplier": round(float(auto_bright_mix), 3),
                     "shadow": {
-                        "sun_dx": round(float(self.bg_sun_dir[0]), 3),
-                        "sun_dy": round(float(self.bg_sun_dir[1]), 3),
-                        "length": round(float(self.bg_shadow_length), 3),
+                        "offset_x": round(float(self.bg_shadow_dx), 3),
+                        "offset_y": round(float(self.bg_shadow_dy), 3),
                         "blur_radius": round(float(self.bg_shadow_blur), 3),
                         "opacity": round(float(sh_opacity_mix), 3)
                     }

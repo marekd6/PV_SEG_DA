@@ -46,9 +46,9 @@ NOISE_MAX = 6
 BLUR_MIN = 0.0
 BLUR_MAX = 1.0
 
-# Global Background Shadow Parameters (Locked per background)
+# Global Image Shadow Parameters (Consistent per final variant image)
 SHADOW_LENGTH_MIN = 1.0
-SHADOW_LENGTH_MAX = 4.0
+SHADOW_LENGTH_MAX = 4.0 # 8
 SHADOW_BLUR_MIN = 2.0
 SHADOW_BLUR_MAX = 4.0
 
@@ -253,7 +253,6 @@ def apply_photometry(img, bright, noise, blur_radius):
 
 def calculate_local_shadow_opacity(bg_img, px, py, pw, ph):
     """Calculates shadow intensity based on local background contrast (standard deviation)."""
-    # Use safe bounds for cropping
     px_safe = max(0, px)
     py_safe = max(0, py)
     pw_safe = min(bg_img.width, px + pw)
@@ -263,7 +262,7 @@ def calculate_local_shadow_opacity(bg_img, px, py, pw, ph):
     bg_arr = np.array(bg_crop.convert("L"), dtype=np.float32)
     
     if bg_arr.size == 0:
-        return 0.35 # Fallback if totally out of bounds
+        return 0.35
         
     std = np.std(bg_arr) / 255.0
     intensity = 0.15 + 0.4 * std
@@ -370,7 +369,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_panel_aug
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Generator (Random Robust Shadows)")
+        self.root.title("YOLOv8 Seg Generator (Variant-Locked Shadows)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -390,10 +389,10 @@ class YoloObbApp:
         
         self.saved_empty_bgs = set()
         
-        # Consistent Shadow settings for the current background
-        self.bg_shadow_dx = 2.0
-        self.bg_shadow_dy = 2.0
-        self.bg_shadow_blur = 3.0
+        # For UI preview purposes only
+        self.ui_shadow_dx = 2.0
+        self.ui_shadow_dy = 2.0
+        self.ui_shadow_blur = 3.0
         
         self.roll_new_geometry()
 
@@ -424,7 +423,7 @@ class YoloObbApp:
         tk.Label(ctrl, text=f"Rozmycie: LOSOWE ({BLUR_MIN}-{BLUR_MAX}px)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         tk.Label(ctrl, text=f"Obrót: LOSOWY ({ROT_MIN}° do {ROT_MAX}°)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         
-        tk.Label(ctrl, text="Cień: SPÓJNY KIERUNEK + KONTRAST", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold", "italic")).pack(anchor="w", pady=(8,2))
+        tk.Label(ctrl, text="Cień: SPÓJNY KIERUNEK (PER OBRAZ)", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold", "italic")).pack(anchor="w", pady=(8,2))
         tk.Label(ctrl, text="Jasność: DOPASOWANA DO TŁA", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold", "italic")).pack(anchor="w", pady=2)
         
         tk.Label(ctrl, text="--- Sterowanie ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
@@ -506,12 +505,12 @@ class YoloObbApp:
         self.base_img = Image.open(p).convert("RGBA")
         self.lbl_bg_info.config(text=f"Tło: {self.current_bg_idx + 1} / {len(self.bg_images)}")
         
-        # Roll a completely random shadow angle/length for the new background, and lock it in.
-        angle = random.uniform(0, 2 * math.pi)
-        length = random.uniform(SHADOW_LENGTH_MIN, SHADOW_LENGTH_MAX)
-        self.bg_shadow_dx = math.cos(angle) * length
-        self.bg_shadow_dy = math.sin(angle) * length
-        self.bg_shadow_blur = random.uniform(SHADOW_BLUR_MIN, SHADOW_BLUR_MAX)
+        # Roll a temporary shadow direction just for the ghost UI preview
+        ui_angle = random.uniform(0, 2 * math.pi)
+        ui_len = random.uniform(SHADOW_LENGTH_MIN, SHADOW_LENGTH_MAX)
+        self.ui_shadow_dx = math.cos(ui_angle) * ui_len
+        self.ui_shadow_dy = math.sin(ui_angle) * ui_len
+        self.ui_shadow_blur = random.uniform(SHADOW_BLUR_MIN, SHADOW_BLUR_MAX)
         
         self.reset_canvas()
         self.check_ready_state()
@@ -607,16 +606,25 @@ class YoloObbApp:
         
         processed_ov = apply_photometry(img_geom, auto_bright, 0, 0.0)
         
-        # Exaggerated shadow for the ghost preview to ensure visibility
+        # Hardcoded opacity and extended length to make UI preview highly visible
         ghost_opacity = 0.9 
-        shadow_img, pad = create_shadow(processed_ov, blur_radius=self.bg_shadow_blur, opacity=ghost_opacity)
+        ghost_length = max(4.0, math.hypot(self.ui_shadow_dx, self.ui_shadow_dy) * 1.5)
+        
+        shadow_img, pad = create_shadow(processed_ov, blur_radius=self.ui_shadow_blur, opacity=ghost_opacity)
         
         self.tk_shadow = ImageTk.PhotoImage(shadow_img)
         self.tk_preview = ImageTk.PhotoImage(processed_ov)
         
-        # Apply the absolute background X/Y direction offset
-        shadow_x = self.last_x + self.bg_shadow_dx * 2.0  # Slightly extended length for UI clarity
-        shadow_y = self.last_y + self.bg_shadow_dy * 2.0
+        # Normalize the UI direction and apply the visible length
+        ui_magnitude = math.hypot(self.ui_shadow_dx, self.ui_shadow_dy)
+        if ui_magnitude > 0:
+            norm_dx = (self.ui_shadow_dx / ui_magnitude) * ghost_length
+            norm_dy = (self.ui_shadow_dy / ui_magnitude) * ghost_length
+        else:
+            norm_dx, norm_dy = ghost_length, ghost_length
+        
+        shadow_x = self.last_x + norm_dx
+        shadow_y = self.last_y + norm_dy
         
         self.canvas.create_image(shadow_x - pad, shadow_y - pad, image=self.tk_shadow, anchor="nw", tag="ghost")
         self.canvas.create_image(self.last_x, self.last_y, image=self.tk_preview, tag="ghost")
@@ -681,10 +689,10 @@ class YoloObbApp:
         
         sh_opacity = calculate_local_shadow_opacity(self.base_img, px, py, pw, ph)
         
-        shadow_img, pad = create_shadow(img_rot, blur_radius=self.bg_shadow_blur, opacity=sh_opacity)
+        shadow_img, pad = create_shadow(img_rot, blur_radius=self.ui_shadow_blur, opacity=sh_opacity)
         
-        shadow_px = px + self.bg_shadow_dx - pad
-        shadow_py = py + self.bg_shadow_dy - pad
+        shadow_px = px + self.ui_shadow_dx - pad
+        shadow_py = py + self.ui_shadow_dy - pad
         
         self.work_img.paste(shadow_img, (int(shadow_px), int(shadow_py)), mask=shadow_img)
         self.work_img.paste(img_rot, (px, py), mask=img_rot)
@@ -741,6 +749,13 @@ class YoloObbApp:
                 labels_poly = []
                 panel_augs = []
                 
+                # Roll shadow properties that stay consistent for this ENTIRE output variant image
+                var_angle = random.uniform(0, 2 * math.pi)
+                var_sh_len = random.uniform(SHADOW_LENGTH_MIN, SHADOW_LENGTH_MAX)
+                var_sh_dx = math.cos(var_angle) * var_sh_len
+                var_sh_dy = math.sin(var_angle) * var_sh_len
+                var_sh_blur = random.uniform(SHADOW_BLUR_MIN, SHADOW_BLUR_MAX)
+                
                 for p in self.placements:
                     grid_shape = p['grid_shape']
                     cell_w = p['cell_w']
@@ -766,10 +781,10 @@ class YoloObbApp:
                     
                     sh_opacity = calculate_local_shadow_opacity(self.base_img, px, py, pw_comp, ph_comp)
                     
-                    shadow_img, pad = create_shadow(img_rot, blur_radius=self.bg_shadow_blur, opacity=sh_opacity)
+                    shadow_img, pad = create_shadow(img_rot, blur_radius=var_sh_blur, opacity=sh_opacity)
                     
-                    shadow_px = px + self.bg_shadow_dx - pad
-                    shadow_py = py + self.bg_shadow_dy - pad
+                    shadow_px = px + var_sh_dx - pad
+                    shadow_py = py + var_sh_dy - pad
                     
                     out_img.paste(shadow_img, (int(shadow_px), int(shadow_py)), mask=shadow_img)
                     out_img.paste(img_rot, (px, py), mask=img_rot)
@@ -790,9 +805,9 @@ class YoloObbApp:
                         "blur_radius": round(float(auto_blur), 3),
                         "brightness_match_multiplier": round(float(auto_bright), 3),
                         "shadow": {
-                            "offset_x": round(float(self.bg_shadow_dx), 3),
-                            "offset_y": round(float(self.bg_shadow_dy), 3),
-                            "blur_radius": round(float(self.bg_shadow_blur), 3),
+                            "offset_x": round(float(var_sh_dx), 3),
+                            "offset_y": round(float(var_sh_dy), 3),
+                            "blur_radius": round(float(var_sh_blur), 3),
                             "opacity": round(float(sh_opacity), 3)
                         }
                     })
@@ -814,6 +829,13 @@ class YoloObbApp:
             out_img_mix = self.base_img.copy()
             labels_poly_mix = []
             panel_augs_mix = []
+            
+            # Roll fresh consistent shadow properties for the MIX variant image
+            mix_angle = random.uniform(0, 2 * math.pi)
+            mix_sh_len = random.uniform(SHADOW_LENGTH_MIN, SHADOW_LENGTH_MAX)
+            mix_sh_dx = math.cos(mix_angle) * mix_sh_len
+            mix_sh_dy = math.sin(mix_angle) * mix_sh_len
+            mix_sh_blur = random.uniform(SHADOW_BLUR_MIN, SHADOW_BLUR_MAX)
             
             for p in self.placements:
                 random_panel_path = random.choice(self.panel_images)
@@ -843,10 +865,10 @@ class YoloObbApp:
                 
                 sh_opacity_mix = calculate_local_shadow_opacity(self.base_img, px_mix, py_mix, pw_comp_mix, ph_comp_mix)
                 
-                shadow_img_mix, pad_mix = create_shadow(img_rot_mix, blur_radius=self.bg_shadow_blur, opacity=sh_opacity_mix)
+                shadow_img_mix, pad_mix = create_shadow(img_rot_mix, blur_radius=mix_sh_blur, opacity=sh_opacity_mix)
                 
-                shadow_px_mix = px_mix + self.bg_shadow_dx - pad_mix
-                shadow_py_mix = py_mix + self.bg_shadow_dy - pad_mix
+                shadow_px_mix = px_mix + mix_sh_dx - pad_mix
+                shadow_py_mix = py_mix + mix_sh_dy - pad_mix
                 
                 out_img_mix.paste(shadow_img_mix, (int(shadow_px_mix), int(shadow_py_mix)), mask=shadow_img_mix)
                 out_img_mix.paste(img_rot_mix, (px_mix, py_mix), mask=img_rot_mix)
@@ -867,9 +889,9 @@ class YoloObbApp:
                     "blur_radius": round(float(auto_blur), 3),
                     "brightness_match_multiplier": round(float(auto_bright_mix), 3),
                     "shadow": {
-                        "offset_x": round(float(self.bg_shadow_dx), 3),
-                        "offset_y": round(float(self.bg_shadow_dy), 3),
-                        "blur_radius": round(float(self.bg_shadow_blur), 3),
+                        "offset_x": round(float(mix_sh_dx), 3),
+                        "offset_y": round(float(mix_sh_dy), 3),
+                        "blur_radius": round(float(mix_sh_blur), 3),
                         "opacity": round(float(sh_opacity_mix), 3)
                     }
                 })

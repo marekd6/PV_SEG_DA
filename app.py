@@ -19,6 +19,7 @@ RANDOM_SEED = 42
 # Directories & Files
 OUTPUT_BASE_DIR = "dataset_yolo_seg32"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
+NO_SHADOW_DIR = os.path.join(OUTPUT_BASE_DIR, "bez_cienia") # NEW: Shadowless images
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 META_DIR = os.path.join(OUTPUT_BASE_DIR, "meta")
 REAL_DIR = os.path.join(OUTPUT_BASE_DIR, "rzeczywiste")
@@ -48,7 +49,7 @@ BLUR_MAX = 1.0
 
 # Global Image Shadow Parameters (Consistent per final variant image)
 SHADOW_LENGTH_MIN = 1.0
-SHADOW_LENGTH_MAX = 4.0 # 8
+SHADOW_LENGTH_MAX = 4.0
 SHADOW_BLUR_MIN = 2.0
 SHADOW_BLUR_MAX = 4.0
 
@@ -76,6 +77,7 @@ if RANDOM_SEED is not None:
 # ==============================================================================
 
 os.makedirs(IMG_DIR, exist_ok=True)
+os.makedirs(NO_SHADOW_DIR, exist_ok=True)
 os.makedirs(LBL_DIR, exist_ok=True)
 os.makedirs(META_DIR, exist_ok=True)
 os.makedirs(REAL_DIR, exist_ok=True)
@@ -314,21 +316,25 @@ def rotate_point(x, y, cx, cy, angle_rad):
     ry = tx * math.sin(angle_rad) + ty * math.cos(angle_rad)
     return rx + cx, ry + cy
 
-def generate_dataset_variants(original_img, original_labels_poly, base_panel_augs, base_name):
-    w_img, h_img = original_img.size
+def generate_dataset_variants(img_shadow, img_noshadow, original_labels_poly, base_panel_augs, base_name):
+    """Applies exact identical global augmentations to both shadowed and shadowless versions simultaneously."""
+    w_img, h_img = img_shadow.size
     
-    img_aug = original_img.copy()
+    img_aug_sh = img_shadow.copy()
+    img_aug_ns = img_noshadow.copy()
     labels_aug = [(cls, list(pts)) for cls, pts in original_labels_poly]
 
     global_noise_val = random.randint(GLOBAL_NOISE_MIN, GLOBAL_NOISE_MAX)
-    img_aug = apply_noise_np(img_aug, global_noise_val)
+    img_aug_sh = apply_noise_np(img_aug_sh, global_noise_val)
+    img_aug_ns = apply_noise_np(img_aug_ns, global_noise_val)
 
     angle = random.choice([
         random.randint(GLOBAL_ROT_RANGE_NEG[0], GLOBAL_ROT_RANGE_NEG[1]), 
         random.randint(GLOBAL_ROT_RANGE_POS[0], GLOBAL_ROT_RANGE_POS[1])
     ])
     
-    img_aug = img_aug.rotate(angle, resample=Image.BICUBIC, expand=False)
+    img_aug_sh = img_aug_sh.rotate(angle, resample=Image.BICUBIC, expand=False)
+    img_aug_ns = img_aug_ns.rotate(angle, resample=Image.BICUBIC, expand=False)
     angle_rad = math.radians(-angle)
     cx_img, cy_img = w_img / 2, h_img / 2
     
@@ -345,7 +351,8 @@ def generate_dataset_variants(original_img, original_labels_poly, base_panel_aug
     labels_aug = new_labels
 
     f_name = f"{base_name}_aug"
-    img_aug.convert("RGB").save(os.path.join(IMG_DIR, f"{f_name}.jpg"), quality=95)
+    img_aug_sh.convert("RGB").save(os.path.join(IMG_DIR, f"{f_name}.jpg"), quality=95)
+    img_aug_ns.convert("RGB").save(os.path.join(NO_SHADOW_DIR, f"{f_name}.jpg"), quality=95)
     
     with open(os.path.join(LBL_DIR, f"{f_name}.txt"), "w") as f:
         for cls, pts in labels_aug:
@@ -369,7 +376,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_panel_aug
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Generator (Variant-Locked Shadows)")
+        self.root.title("YOLOv8 Seg Generator (Parallel Bez_Cienia Output)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -733,7 +740,11 @@ class YoloObbApp:
             # 1. Negative Sample
             if current_bg_path not in self.saved_empty_bgs:
                 empty_base_name = f"{original_filename}_empty"
+                
+                # Save both shadowed (IMG_DIR) and shadowless (NO_SHADOW_DIR) versions
                 self.base_img.convert("RGB").save(os.path.join(IMG_DIR, f"{empty_base_name}.jpg"))
+                self.base_img.convert("RGB").save(os.path.join(NO_SHADOW_DIR, f"{empty_base_name}.jpg"))
+                
                 open(os.path.join(LBL_DIR, f"{empty_base_name}.txt"), "w").close() 
                 
                 empty_aug_data = {"global_augmentations": {}, "panels": []}
@@ -745,7 +756,9 @@ class YoloObbApp:
             # 2. Base Panels Variants
             for p_idx, panel_path in enumerate(self.panel_images):
                 panel_img = Image.open(panel_path).convert("RGBA")
-                out_img = self.base_img.copy() 
+                out_img = self.base_img.copy() # Shadowed
+                out_img_ns = self.base_img.copy() # Shadowless
+                
                 labels_poly = []
                 panel_augs = []
                 
@@ -779,8 +792,11 @@ class YoloObbApp:
                     
                     img_rot = apply_photometry(img_geom, auto_bright, auto_noise, auto_blur)
                     
-                    sh_opacity = calculate_local_shadow_opacity(self.base_img, px, py, pw_comp, ph_comp)
+                    # 1) Drop shadowless panel directly onto out_img_ns
+                    out_img_ns.paste(img_rot, (px, py), mask=img_rot)
                     
+                    # 2) Calculate and drop shadowed panel onto out_img
+                    sh_opacity = calculate_local_shadow_opacity(self.base_img, px, py, pw_comp, ph_comp)
                     shadow_img, pad = create_shadow(img_rot, blur_radius=var_sh_blur, opacity=sh_opacity)
                     
                     shadow_px = px + var_sh_dx - pad
@@ -814,6 +830,8 @@ class YoloObbApp:
                 
                 base_name = f"{original_filename}_pnl{p_idx}"
                 out_img.convert("RGB").save(os.path.join(IMG_DIR, f"{base_name}.jpg"), quality=95)
+                out_img_ns.convert("RGB").save(os.path.join(NO_SHADOW_DIR, f"{base_name}.jpg"), quality=95)
+                
                 with open(os.path.join(LBL_DIR, f"{base_name}.txt"), "w") as f:
                     for cls, pts in labels_poly:
                         coords = " ".join([f"{pt[0]:.6f} {pt[1]:.6f}" for pt in pts])
@@ -823,10 +841,11 @@ class YoloObbApp:
                 with open(os.path.join(META_DIR, f"{base_name}.json"), "w") as f:
                     json.dump(base_aug_data, f, indent=4)
                 
-                generate_dataset_variants(out_img, labels_poly, panel_augs, base_name)
+                generate_dataset_variants(out_img, out_img_ns, labels_poly, panel_augs, base_name)
                 
             # 3. MIX Variant
-            out_img_mix = self.base_img.copy()
+            out_img_mix = self.base_img.copy() # Shadowed
+            out_img_mix_ns = self.base_img.copy() # Shadowless
             labels_poly_mix = []
             panel_augs_mix = []
             
@@ -863,8 +882,11 @@ class YoloObbApp:
                 auto_bright_mix = calculate_brightness_adjustment(self.base_img, img_geom_mix, px_mix, py_mix)
                 img_rot_mix = apply_photometry(img_geom_mix, auto_bright_mix, auto_noise, auto_blur)
                 
-                sh_opacity_mix = calculate_local_shadow_opacity(self.base_img, px_mix, py_mix, pw_comp_mix, ph_comp_mix)
+                # Drop shadowless panel directly onto out_img_mix_ns
+                out_img_mix_ns.paste(img_rot_mix, (px_mix, py_mix), mask=img_rot_mix)
                 
+                # Calculate and drop shadowed panel onto out_img_mix
+                sh_opacity_mix = calculate_local_shadow_opacity(self.base_img, px_mix, py_mix, pw_comp_mix, ph_comp_mix)
                 shadow_img_mix, pad_mix = create_shadow(img_rot_mix, blur_radius=mix_sh_blur, opacity=sh_opacity_mix)
                 
                 shadow_px_mix = px_mix + mix_sh_dx - pad_mix
@@ -897,7 +919,9 @@ class YoloObbApp:
                 })
                 
             base_name_mix = f"{original_filename}_mix"
-            out_img_mix.convert("RGB").save(os.path.join(IMG_DIR, f"{base_name_mix}.jpg"))
+            out_img_mix.convert("RGB").save(os.path.join(IMG_DIR, f"{base_name_mix}.jpg"), quality=95)
+            out_img_mix_ns.convert("RGB").save(os.path.join(NO_SHADOW_DIR, f"{base_name_mix}.jpg"), quality=95)
+            
             with open(os.path.join(LBL_DIR, f"{base_name_mix}.txt"), "w") as f:
                 for cls, pts in labels_poly_mix:
                     coords = " ".join([f"{pt[0]:.6f} {pt[1]:.6f}" for pt in pts])
@@ -907,7 +931,7 @@ class YoloObbApp:
             with open(os.path.join(META_DIR, f"{base_name_mix}.json"), "w") as f:
                 json.dump(mix_aug_data, f, indent=4)
                     
-            generate_dataset_variants(out_img_mix, labels_poly_mix, panel_augs_mix, base_name_mix)
+            generate_dataset_variants(out_img_mix, out_img_mix_ns, labels_poly_mix, panel_augs_mix, base_name_mix)
                 
             self.lbl_status.config(text="Zapisano pomyślnie. Ładowanie kolejnego tła...")
             

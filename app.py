@@ -17,9 +17,9 @@ import shutil
 RANDOM_SEED = 42
 
 # Directories & Files
-OUTPUT_BASE_DIR = "dataset_yolo_seg32"
+OUTPUT_BASE_DIR = "dataset_yolo_seg33"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
-NO_SHADOW_DIR = os.path.join(OUTPUT_BASE_DIR, "bez_cienia") # NEW: Shadowless images
+NO_SHADOW_DIR = os.path.join(OUTPUT_BASE_DIR, "bez_cienia") 
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 META_DIR = os.path.join(OUTPUT_BASE_DIR, "meta")
 REAL_DIR = os.path.join(OUTPUT_BASE_DIR, "rzeczywiste")
@@ -145,6 +145,30 @@ def create_grid_composite(panel_img, grid_shape):
         
     return composite, w, h
 
+def create_heterogeneous_grid_composite(panels_list, grid_shape):
+    """Creates a grid composite where every single cell is randomly chosen from the available panels."""
+    w, h = panels_list[0].size
+    half_w = w // 2
+    half_h = h // 2
+    
+    min_x = min(gx for gx, gy in grid_shape)
+    max_x = max(gx for gx, gy in grid_shape)
+    min_y = min(gy for gx, gy in grid_shape)
+    max_y = max(gy for gx, gy in grid_shape)
+    
+    gw = (max_x - min_x + 2) * half_w
+    gh = (max_y - min_y + 2) * half_h
+    
+    composite = Image.new("RGBA", (gw, gh), (0, 0, 0, 0))
+    
+    for gx, gy in grid_shape:
+        px = (gx - min_x) * half_w
+        py = (gy - min_y) * half_h
+        panel_img = random.choice(panels_list)
+        composite.paste(panel_img, (px, py), mask=panel_img)
+        
+    return composite, w, h
+
 def get_grid_polygon(grid_shape, cell_w, cell_h):
     half_w = cell_w / 2.0
     half_h = cell_h / 2.0
@@ -264,7 +288,7 @@ def calculate_local_shadow_opacity(bg_img, px, py, pw, ph):
     bg_arr = np.array(bg_crop.convert("L"), dtype=np.float32)
     
     if bg_arr.size == 0:
-        return 0.35
+        return 0.35 
         
     std = np.std(bg_arr) / 255.0
     intensity = 0.15 + 0.4 * std
@@ -376,7 +400,7 @@ def generate_dataset_variants(img_shadow, img_noshadow, original_labels_poly, ba
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Generator (Parallel Bez_Cienia Output)")
+        self.root.title("YOLOv8 Seg Generator (Parallel Bez_Cienia Output + Composite)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -753,6 +777,9 @@ class YoloObbApp:
                     
                 self.saved_empty_bgs.add(current_bg_path)
 
+            # --- Preload panel images for composite variants to save time ---
+            loaded_panels = [Image.open(p).convert("RGBA") for p in self.panel_images]
+
             # 2. Base Panels Variants
             for p_idx, panel_path in enumerate(self.panel_images):
                 panel_img = Image.open(panel_path).convert("RGBA")
@@ -932,6 +959,92 @@ class YoloObbApp:
                 json.dump(mix_aug_data, f, indent=4)
                     
             generate_dataset_variants(out_img_mix, out_img_mix_ns, labels_poly_mix, panel_augs_mix, base_name_mix)
+            
+            # 4. COMPOSITE Variant (Randomize panel inside every single grid cell)
+            out_img_comp = self.base_img.copy() # Shadowed
+            out_img_comp_ns = self.base_img.copy() # Shadowless
+            labels_poly_comp = []
+            panel_augs_comp = []
+            
+            comp_angle = random.uniform(0, 2 * math.pi)
+            comp_sh_len = random.uniform(SHADOW_LENGTH_MIN, SHADOW_LENGTH_MAX)
+            comp_sh_dx = math.cos(comp_angle) * comp_sh_len
+            comp_sh_dy = math.sin(comp_angle) * comp_sh_len
+            comp_sh_blur = random.uniform(SHADOW_BLUR_MIN, SHADOW_BLUR_MAX)
+            
+            for p in self.placements:
+                grid_shape = p['grid_shape']
+                cell_w = p['cell_w']
+                cell_h = p['cell_h']
+                
+                auto_rot = random.randint(ROT_MIN, ROT_MAX)
+                auto_noise = random.randint(NOISE_MIN, NOISE_MAX)
+                auto_stretch_x = random.uniform(STRETCH_MIN, STRETCH_MAX)
+                auto_stretch_y = random.uniform(STRETCH_MIN, STRETCH_MAX)
+                auto_blur = random.uniform(BLUR_MIN, BLUR_MAX)
+                
+                # Scale all loaded panels for the composite grid generator
+                scaled_panels_list = [p_img.resize((cell_w, cell_h), Image.Resampling.LANCZOS) for p_img in loaded_panels]
+                
+                comp_comp, cw_comp, ch_comp = create_heterogeneous_grid_composite(scaled_panels_list, grid_shape)
+                
+                img_geom_comp = apply_geometry(comp_comp, auto_rot, auto_stretch_x, auto_stretch_y)
+                
+                pw_comp_comp, ph_comp_comp = img_geom_comp.size
+                px_comp, py_comp = int(p['cx'] - pw_comp_comp / 2), int(p['cy'] - ph_comp_comp / 2)
+                
+                auto_bright_comp = calculate_brightness_adjustment(self.base_img, img_geom_comp, px_comp, py_comp)
+                img_rot_comp = apply_photometry(img_geom_comp, auto_bright_comp, auto_noise, auto_blur)
+                
+                out_img_comp_ns.paste(img_rot_comp, (px_comp, py_comp), mask=img_rot_comp)
+                
+                sh_opacity_comp = calculate_local_shadow_opacity(self.base_img, px_comp, py_comp, pw_comp_comp, ph_comp_comp)
+                
+                shadow_img_comp, pad_comp = create_shadow(img_rot_comp, blur_radius=comp_sh_blur, opacity=sh_opacity_comp)
+                
+                shadow_px_comp = px_comp + comp_sh_dx - pad_comp
+                shadow_py_comp = py_comp + comp_sh_dy - pad_comp
+                
+                out_img_comp.paste(shadow_img_comp, (int(shadow_px_comp), int(shadow_py_comp)), mask=shadow_img_comp)
+                out_img_comp.paste(img_rot_comp, (px_comp, py_comp), mask=img_rot_comp)
+                
+                base_poly_comp = get_grid_polygon(grid_shape, cell_w, cell_h)
+                trans_poly_comp = transform_polygon(base_poly_comp, p['cx'], p['cy'], auto_rot, auto_stretch_x, auto_stretch_y)
+                norm_poly_comp = normalize_polygon(trans_poly_comp, out_img_comp.width, out_img_comp.height)
+                labels_poly_comp.append((0, norm_poly_comp))
+                
+                panel_augs_comp.append({
+                    "class_id": 0,
+                    "grid_cells": len(grid_shape),
+                    "locked_size": p['size'],
+                    "rotation_deg": auto_rot,
+                    "stretch_x": round(float(auto_stretch_x), 3),
+                    "stretch_y": round(float(auto_stretch_y), 3),
+                    "noise_intensity": auto_noise,
+                    "blur_radius": round(float(auto_blur), 3),
+                    "brightness_match_multiplier": round(float(auto_bright_comp), 3),
+                    "shadow": {
+                        "offset_x": round(float(comp_sh_dx), 3),
+                        "offset_y": round(float(comp_sh_dy), 3),
+                        "blur_radius": round(float(comp_sh_blur), 3),
+                        "opacity": round(float(sh_opacity_comp), 3)
+                    }
+                })
+                
+            base_name_comp = f"{original_filename}_composite"
+            out_img_comp.convert("RGB").save(os.path.join(IMG_DIR, f"{base_name_comp}.jpg"), quality=95)
+            out_img_comp_ns.convert("RGB").save(os.path.join(NO_SHADOW_DIR, f"{base_name_comp}.jpg"), quality=95)
+            
+            with open(os.path.join(LBL_DIR, f"{base_name_comp}.txt"), "w") as f:
+                for cls, pts in labels_poly_comp:
+                    coords = " ".join([f"{pt[0]:.6f} {pt[1]:.6f}" for pt in pts])
+                    f.write(f"{cls} {coords}\n")
+                    
+            comp_aug_data = {"global_augmentations": {}, "panels": panel_augs_comp}
+            with open(os.path.join(META_DIR, f"{base_name_comp}.json"), "w") as f:
+                json.dump(comp_aug_data, f, indent=4)
+                    
+            generate_dataset_variants(out_img_comp, out_img_comp_ns, labels_poly_comp, panel_augs_comp, base_name_comp)
                 
             self.lbl_status.config(text="Zapisano pomyślnie. Ładowanie kolejnego tła...")
             

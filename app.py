@@ -17,7 +17,7 @@ import shutil
 RANDOM_SEED = 42
 
 # Directories & Files
-OUTPUT_BASE_DIR = "dataset_yolo_seg32"
+OUTPUT_BASE_DIR = "dataset_yolo_seg33"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
 NO_SHADOW_DIR = os.path.join(OUTPUT_BASE_DIR, "bez_cienia") # NEW: Shadowless images
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
@@ -141,6 +141,30 @@ def create_grid_composite(panel_img, grid_shape):
     for gx, gy in grid_shape:
         px = (gx - min_x) * half_w
         py = (gy - min_y) * half_h
+        composite.paste(panel_img, (px, py), mask=panel_img)
+        
+    return composite, w, h
+
+def create_heterogeneous_grid_composite(panels_list, grid_shape):
+    """Creates a grid composite where every single cell is randomly chosen from the available panels."""
+    w, h = panels_list[0].size
+    half_w = w // 2
+    half_h = h // 2
+    
+    min_x = min(gx for gx, gy in grid_shape)
+    max_x = max(gx for gx, gy in grid_shape)
+    min_y = min(gy for gx, gy in grid_shape)
+    max_y = max(gy for gx, gy in grid_shape)
+    
+    gw = (max_x - min_x + 2) * half_w
+    gh = (max_y - min_y + 2) * half_h
+    
+    composite = Image.new("RGBA", (gw, gh), (0, 0, 0, 0))
+    
+    for gx, gy in grid_shape:
+        px = (gx - min_x) * half_w
+        py = (gy - min_y) * half_h
+        panel_img = random.choice(panels_list)
         composite.paste(panel_img, (px, py), mask=panel_img)
         
     return composite, w, h
@@ -752,6 +776,9 @@ class YoloObbApp:
                     json.dump(empty_aug_data, f, indent=4)
                     
                 self.saved_empty_bgs.add(current_bg_path)
+
+            # --- Preload panel images for composite variants to save time ---
+            loaded_panels = [Image.open(p).convert("RGBA") for p in self.panel_images]
 
             # 2. Base Panels Variants
             for p_idx, panel_path in enumerate(self.panel_images):

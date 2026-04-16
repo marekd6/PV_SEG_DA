@@ -19,6 +19,7 @@ RANDOM_SEED = 42
 # Directories & Files
 OUTPUT_BASE_DIR = "dataset_yolo_seg32"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
+NO_SHADOW_DIR = os.path.join(OUTPUT_BASE_DIR, "bez_cienia") # NEW: Shadowless images
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
 META_DIR = os.path.join(OUTPUT_BASE_DIR, "meta")
 REAL_DIR = os.path.join(OUTPUT_BASE_DIR, "rzeczywiste")
@@ -30,7 +31,7 @@ DEFAULT_PANEL_FOLDER = './pvs'
 # Grid Generation
 GRID_CELLS_MIN = 2
 GRID_CELLS_MAX = 6
-GRID_SHIFT_PROBABILITY = 0.2  # 20% chance for a staggered (half-shift) grid layout
+GRID_SHIFT_PROBABILITY = 0.25  # 20% chance for a staggered (half-shift) grid layout
 
 # Panel Base Geometry (Locked per placement click)
 PANEL_SIZE_MIN = 22
@@ -42,21 +43,19 @@ ROT_MAX = 180
 STRETCH_MIN = 0.8
 STRETCH_MAX = 1.2
 NOISE_MIN = 0
-NOISE_MAX = 11
+NOISE_MAX = 6
 BLUR_MIN = 0.0
-BLUR_MAX = 0.6
+BLUR_MAX = 1.0
 
-# Per-Panel Shadow Parameters
-SHADOW_OFFSET_MIN = 2
-SHADOW_OFFSET_MAX = 6
-SHADOW_BLUR_MIN = 3.0
-SHADOW_BLUR_MAX = 6.0
-SHADOW_OPACITY_MIN = 0.2
-SHADOW_OPACITY_MAX = 0.5
+# Global Image Shadow Parameters (Consistent per final variant image)
+SHADOW_LENGTH_MIN = 1.0
+SHADOW_LENGTH_MAX = 4.0
+SHADOW_BLUR_MIN = 2.0
+SHADOW_BLUR_MAX = 4.0
 
 # Global Image Extra Variant Augmentations
-GLOBAL_NOISE_MIN = 10
-GLOBAL_NOISE_MAX = 20
+GLOBAL_NOISE_MIN = 6
+GLOBAL_NOISE_MAX = 12
 GLOBAL_ROT_RANGE_NEG = (-15, -5)
 GLOBAL_ROT_RANGE_POS = (5, 15)
 
@@ -66,9 +65,7 @@ BRIGHTNESS_CLAMP_MAX = 2.0
 ALPHA_MASK_THRESHOLD = 10
 
 # UI Ghost Preview Settings
-UI_SHADOW_BLUR = 4.0
-UI_SHADOW_OPACITY = 0.35
-UI_SHADOW_OFFSET = 4
+UI_GHOST_SCALE_BASE = 33
 
 # Apply Seed globally if defined
 if RANDOM_SEED is not None:
@@ -80,6 +77,7 @@ if RANDOM_SEED is not None:
 # ==============================================================================
 
 os.makedirs(IMG_DIR, exist_ok=True)
+os.makedirs(NO_SHADOW_DIR, exist_ok=True)
 os.makedirs(LBL_DIR, exist_ok=True)
 os.makedirs(META_DIR, exist_ok=True)
 os.makedirs(REAL_DIR, exist_ok=True)
@@ -255,7 +253,25 @@ def apply_photometry(img, bright, noise, blur_radius):
         res = apply_noise_np(res, noise)
     return res
 
+def calculate_local_shadow_opacity(bg_img, px, py, pw, ph):
+    """Calculates shadow intensity based on local background contrast (standard deviation)."""
+    px_safe = max(0, px)
+    py_safe = max(0, py)
+    pw_safe = min(bg_img.width, px + pw)
+    ph_safe = min(bg_img.height, py + ph)
+    
+    bg_crop = bg_img.crop((px_safe, py_safe, pw_safe, ph_safe))
+    bg_arr = np.array(bg_crop.convert("L"), dtype=np.float32)
+    
+    if bg_arr.size == 0:
+        return 0.35
+        
+    std = np.std(bg_arr) / 255.0
+    intensity = 0.15 + 0.4 * std
+    return float(max(0.1, min(intensity, 0.7)))
+
 def create_shadow(img, blur_radius, opacity):
+    """Generates a pure PIL shadow based on the rotated panel silhouette."""
     pad = int(math.ceil(blur_radius)) * 2 + 2
     padded_size = (img.width + pad * 2, img.height + pad * 2)
     shadow = Image.new("RGBA", padded_size, (0, 0, 0, 0))
@@ -300,21 +316,25 @@ def rotate_point(x, y, cx, cy, angle_rad):
     ry = tx * math.sin(angle_rad) + ty * math.cos(angle_rad)
     return rx + cx, ry + cy
 
-def generate_dataset_variants(original_img, original_labels_poly, base_panel_augs, base_name):
-    w_img, h_img = original_img.size
+def generate_dataset_variants(img_shadow, img_noshadow, original_labels_poly, base_panel_augs, base_name):
+    """Applies exact identical global augmentations to both shadowed and shadowless versions simultaneously."""
+    w_img, h_img = img_shadow.size
     
-    img_aug = original_img.copy()
+    img_aug_sh = img_shadow.copy()
+    img_aug_ns = img_noshadow.copy()
     labels_aug = [(cls, list(pts)) for cls, pts in original_labels_poly]
 
     global_noise_val = random.randint(GLOBAL_NOISE_MIN, GLOBAL_NOISE_MAX)
-    img_aug = apply_noise_np(img_aug, global_noise_val)
+    img_aug_sh = apply_noise_np(img_aug_sh, global_noise_val)
+    img_aug_ns = apply_noise_np(img_aug_ns, global_noise_val)
 
     angle = random.choice([
         random.randint(GLOBAL_ROT_RANGE_NEG[0], GLOBAL_ROT_RANGE_NEG[1]), 
         random.randint(GLOBAL_ROT_RANGE_POS[0], GLOBAL_ROT_RANGE_POS[1])
     ])
     
-    img_aug = img_aug.rotate(angle, resample=Image.BICUBIC, expand=False)
+    img_aug_sh = img_aug_sh.rotate(angle, resample=Image.BICUBIC, expand=False)
+    img_aug_ns = img_aug_ns.rotate(angle, resample=Image.BICUBIC, expand=False)
     angle_rad = math.radians(-angle)
     cx_img, cy_img = w_img / 2, h_img / 2
     
@@ -331,7 +351,8 @@ def generate_dataset_variants(original_img, original_labels_poly, base_panel_aug
     labels_aug = new_labels
 
     f_name = f"{base_name}_aug"
-    img_aug.convert("RGB").save(os.path.join(IMG_DIR, f"{f_name}.jpg"), quality=95)
+    img_aug_sh.convert("RGB").save(os.path.join(IMG_DIR, f"{f_name}.jpg"), quality=95)
+    img_aug_ns.convert("RGB").save(os.path.join(NO_SHADOW_DIR, f"{f_name}.jpg"), quality=95)
     
     with open(os.path.join(LBL_DIR, f"{f_name}.txt"), "w") as f:
         for cls, pts in labels_aug:
@@ -355,7 +376,7 @@ def generate_dataset_variants(original_img, original_labels_poly, base_panel_aug
 class YoloObbApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("YOLOv8 Seg Generator (Fixed Scaled Circles)")
+        self.root.title("YOLOv8 Seg Generator (Parallel Bez_Cienia Output)")
         self.root.geometry("1280x800")
 
         self.bg_images = []
@@ -374,6 +395,11 @@ class YoloObbApp:
         self.last_y = 0
         
         self.saved_empty_bgs = set()
+        
+        # For UI preview purposes only
+        self.ui_shadow_dx = 2.0
+        self.ui_shadow_dy = 2.0
+        self.ui_shadow_blur = 3.0
         
         self.roll_new_geometry()
 
@@ -404,7 +430,7 @@ class YoloObbApp:
         tk.Label(ctrl, text=f"Rozmycie: LOSOWE ({BLUR_MIN}-{BLUR_MAX}px)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         tk.Label(ctrl, text=f"Obrót: LOSOWY ({ROT_MIN}° do {ROT_MAX}°)", bg="#dddddd", fg=info_color, font=info_font).pack(anchor="w", pady=2)
         
-        tk.Label(ctrl, text="Cień (Shadow): ZMIENNY KIERUNEK", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold", "italic")).pack(anchor="w", pady=(8,2))
+        tk.Label(ctrl, text="Cień: SPÓJNY KIERUNEK (PER OBRAZ)", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold", "italic")).pack(anchor="w", pady=(8,2))
         tk.Label(ctrl, text="Jasność: DOPASOWANA DO TŁA", bg="#dddddd", fg="#b71c1c", font=("Arial", 9, "bold", "italic")).pack(anchor="w", pady=2)
         
         tk.Label(ctrl, text="--- Sterowanie ---", bg="#dddddd", font=("Arial", 10, "bold")).pack(pady=(15,5))
@@ -485,6 +511,14 @@ class YoloObbApp:
         p = self.bg_images[self.current_bg_idx]
         self.base_img = Image.open(p).convert("RGBA")
         self.lbl_bg_info.config(text=f"Tło: {self.current_bg_idx + 1} / {len(self.bg_images)}")
+        
+        # Roll a temporary shadow direction just for the ghost UI preview
+        ui_angle = random.uniform(0, 2 * math.pi)
+        ui_len = random.uniform(SHADOW_LENGTH_MIN, SHADOW_LENGTH_MAX)
+        self.ui_shadow_dx = math.cos(ui_angle) * ui_len
+        self.ui_shadow_dy = math.sin(ui_angle) * ui_len
+        self.ui_shadow_blur = random.uniform(SHADOW_BLUR_MIN, SHADOW_BLUR_MAX)
+        
         self.reset_canvas()
         self.check_ready_state()
 
@@ -556,7 +590,6 @@ class YoloObbApp:
         self.current_size = random.randint(PANEL_SIZE_MIN, PANEL_SIZE_MAX)
 
     def _get_scaled_preview_panel(self):
-        # CRITICAL FIX: The preview scale now perfectly matches the exact rolled size for the placement
         scale_factor = self.current_size / max(self.preview_panel_img.size)
         scaled_w = max(2, int(self.preview_panel_img.width * scale_factor))
         scaled_w = (scaled_w // 2) * 2 
@@ -580,19 +613,29 @@ class YoloObbApp:
         
         processed_ov = apply_photometry(img_geom, auto_bright, 0, 0.0)
         
-        shadow_img, pad = create_shadow(processed_ov, blur_radius=UI_SHADOW_BLUR, opacity=UI_SHADOW_OPACITY)
+        # Hardcoded opacity and extended length to make UI preview highly visible
+        ghost_opacity = 0.9 
+        ghost_length = max(4.0, math.hypot(self.ui_shadow_dx, self.ui_shadow_dy) * 1.5)
+        
+        shadow_img, pad = create_shadow(processed_ov, blur_radius=self.ui_shadow_blur, opacity=ghost_opacity)
         
         self.tk_shadow = ImageTk.PhotoImage(shadow_img)
         self.tk_preview = ImageTk.PhotoImage(processed_ov)
         
-        shadow_offset_x = UI_SHADOW_OFFSET
-        shadow_offset_y = UI_SHADOW_OFFSET
+        # Normalize the UI direction and apply the visible length
+        ui_magnitude = math.hypot(self.ui_shadow_dx, self.ui_shadow_dy)
+        if ui_magnitude > 0:
+            norm_dx = (self.ui_shadow_dx / ui_magnitude) * ghost_length
+            norm_dy = (self.ui_shadow_dy / ui_magnitude) * ghost_length
+        else:
+            norm_dx, norm_dy = ghost_length, ghost_length
         
-        self.canvas.create_image(self.last_x + shadow_offset_x, self.last_y + shadow_offset_y, image=self.tk_shadow, tag="ghost")
+        shadow_x = self.last_x + norm_dx
+        shadow_y = self.last_y + norm_dy
+        
+        self.canvas.create_image(shadow_x - pad, shadow_y - pad, image=self.tk_shadow, anchor="nw", tag="ghost")
         self.canvas.create_image(self.last_x, self.last_y, image=self.tk_preview, tag="ghost")
         
-        # --- DRAW CIRCUMCIRCLE TO SHOW MAX ROTATION BOUNDARY ---
-        # Because we use self.current_size scaling above, this radius exactly matches the clicked radius
         poly = get_grid_polygon(self.current_grid_shape, scaled_panel.width, scaled_panel.height)
         if poly:
             max_radius = max(math.hypot(x, y) for x, y in poly)
@@ -628,7 +671,6 @@ class YoloObbApp:
         else:
             grid_shape_to_save = [(0, 0)]
             
-        # Calculate max radius for the permanent overlay BEFORE placing
         poly = get_grid_polygon(grid_shape_to_save, cell_w, cell_h)
         max_radius = max(math.hypot(x, y) for x, y in poly) if poly else 0
             
@@ -639,7 +681,7 @@ class YoloObbApp:
             'cell_w': cell_w,
             'cell_h': cell_h,
             'size': self.current_size,
-            'max_radius': max_radius # Save for the UI redraw
+            'max_radius': max_radius
         })
 
         scaled_panel = self._get_scaled_preview_panel()
@@ -652,11 +694,14 @@ class YoloObbApp:
         auto_bright = calculate_brightness_adjustment(self.base_img, img_geom, px, py)
         img_rot = apply_photometry(img_geom, auto_bright, 0, 0.0)
         
-        shadow_img, pad = create_shadow(img_rot, blur_radius=UI_SHADOW_BLUR, opacity=UI_SHADOW_OPACITY)
-        shadow_px = px + UI_SHADOW_OFFSET - pad
-        shadow_py = py + UI_SHADOW_OFFSET - pad
-        self.work_img.paste(shadow_img, (shadow_px, shadow_py), mask=shadow_img)
+        sh_opacity = calculate_local_shadow_opacity(self.base_img, px, py, pw, ph)
         
+        shadow_img, pad = create_shadow(img_rot, blur_radius=self.ui_shadow_blur, opacity=sh_opacity)
+        
+        shadow_px = px + self.ui_shadow_dx - pad
+        shadow_py = py + self.ui_shadow_dy - pad
+        
+        self.work_img.paste(shadow_img, (int(shadow_px), int(shadow_py)), mask=shadow_img)
         self.work_img.paste(img_rot, (px, py), mask=img_rot)
         
         self.redraw()
@@ -670,7 +715,6 @@ class YoloObbApp:
         self.canvas.delete("all")
         self.canvas.create_image(0, 0, image=self.tk_bg, anchor="nw")
         
-        # Draw the permanent UI overlays for all placed objects
         for p in self.placements:
             cx, cy = p['cx'], p['cy']
             r = p.get('max_radius', 0)
@@ -693,10 +737,14 @@ class YoloObbApp:
             current_bg_path = self.bg_images[self.current_bg_idx]
             original_filename = os.path.splitext(os.path.basename(current_bg_path))[0]
 
-            # 1. Negative Sample (Saved ONLY ONCE per unique background image session)
+            # 1. Negative Sample
             if current_bg_path not in self.saved_empty_bgs:
                 empty_base_name = f"{original_filename}_empty"
+                
+                # Save both shadowed (IMG_DIR) and shadowless (NO_SHADOW_DIR) versions
                 self.base_img.convert("RGB").save(os.path.join(IMG_DIR, f"{empty_base_name}.jpg"))
+                self.base_img.convert("RGB").save(os.path.join(NO_SHADOW_DIR, f"{empty_base_name}.jpg"))
+                
                 open(os.path.join(LBL_DIR, f"{empty_base_name}.txt"), "w").close() 
                 
                 empty_aug_data = {"global_augmentations": {}, "panels": []}
@@ -708,9 +756,18 @@ class YoloObbApp:
             # 2. Base Panels Variants
             for p_idx, panel_path in enumerate(self.panel_images):
                 panel_img = Image.open(panel_path).convert("RGBA")
-                out_img = self.base_img.copy() 
+                out_img = self.base_img.copy() # Shadowed
+                out_img_ns = self.base_img.copy() # Shadowless
+                
                 labels_poly = []
                 panel_augs = []
+                
+                # Roll shadow properties that stay consistent for this ENTIRE output variant image
+                var_angle = random.uniform(0, 2 * math.pi)
+                var_sh_len = random.uniform(SHADOW_LENGTH_MIN, SHADOW_LENGTH_MAX)
+                var_sh_dx = math.cos(var_angle) * var_sh_len
+                var_sh_dy = math.sin(var_angle) * var_sh_len
+                var_sh_blur = random.uniform(SHADOW_BLUR_MIN, SHADOW_BLUR_MAX)
                 
                 for p in self.placements:
                     grid_shape = p['grid_shape']
@@ -722,11 +779,6 @@ class YoloObbApp:
                     auto_stretch_x = random.uniform(STRETCH_MIN, STRETCH_MAX)
                     auto_stretch_y = random.uniform(STRETCH_MIN, STRETCH_MAX)
                     auto_blur = random.uniform(BLUR_MIN, BLUR_MAX)
-                    
-                    sh_off_x = random.randint(SHADOW_OFFSET_MIN, SHADOW_OFFSET_MAX)
-                    sh_off_y = random.randint(SHADOW_OFFSET_MIN, SHADOW_OFFSET_MAX)
-                    sh_blur = random.uniform(SHADOW_BLUR_MIN, SHADOW_BLUR_MAX)
-                    sh_opacity = random.uniform(SHADOW_OPACITY_MIN, SHADOW_OPACITY_MAX)
                     
                     scaled_panel = panel_img.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
                     
@@ -740,8 +792,17 @@ class YoloObbApp:
                     
                     img_rot = apply_photometry(img_geom, auto_bright, auto_noise, auto_blur)
                     
-                    shadow_img, pad = create_shadow(img_rot, sh_blur, sh_opacity)
-                    out_img.paste(shadow_img, (px + sh_off_x - pad, py + sh_off_y - pad), mask=shadow_img)
+                    # 1) Drop shadowless panel directly onto out_img_ns
+                    out_img_ns.paste(img_rot, (px, py), mask=img_rot)
+                    
+                    # 2) Calculate and drop shadowed panel onto out_img
+                    sh_opacity = calculate_local_shadow_opacity(self.base_img, px, py, pw_comp, ph_comp)
+                    shadow_img, pad = create_shadow(img_rot, blur_radius=var_sh_blur, opacity=sh_opacity)
+                    
+                    shadow_px = px + var_sh_dx - pad
+                    shadow_py = py + var_sh_dy - pad
+                    
+                    out_img.paste(shadow_img, (int(shadow_px), int(shadow_py)), mask=shadow_img)
                     out_img.paste(img_rot, (px, py), mask=img_rot)
                     
                     base_poly = get_grid_polygon(grid_shape, cell_w, cell_h)
@@ -760,15 +821,17 @@ class YoloObbApp:
                         "blur_radius": round(float(auto_blur), 3),
                         "brightness_match_multiplier": round(float(auto_bright), 3),
                         "shadow": {
-                            "offset_x": sh_off_x,
-                            "offset_y": sh_off_y,
-                            "blur_radius": round(float(sh_blur), 3),
+                            "offset_x": round(float(var_sh_dx), 3),
+                            "offset_y": round(float(var_sh_dy), 3),
+                            "blur_radius": round(float(var_sh_blur), 3),
                             "opacity": round(float(sh_opacity), 3)
                         }
                     })
                 
                 base_name = f"{original_filename}_pnl{p_idx}"
                 out_img.convert("RGB").save(os.path.join(IMG_DIR, f"{base_name}.jpg"), quality=95)
+                out_img_ns.convert("RGB").save(os.path.join(NO_SHADOW_DIR, f"{base_name}.jpg"), quality=95)
+                
                 with open(os.path.join(LBL_DIR, f"{base_name}.txt"), "w") as f:
                     for cls, pts in labels_poly:
                         coords = " ".join([f"{pt[0]:.6f} {pt[1]:.6f}" for pt in pts])
@@ -778,12 +841,20 @@ class YoloObbApp:
                 with open(os.path.join(META_DIR, f"{base_name}.json"), "w") as f:
                     json.dump(base_aug_data, f, indent=4)
                 
-                generate_dataset_variants(out_img, labels_poly, panel_augs, base_name)
+                generate_dataset_variants(out_img, out_img_ns, labels_poly, panel_augs, base_name)
                 
             # 3. MIX Variant
-            out_img_mix = self.base_img.copy()
+            out_img_mix = self.base_img.copy() # Shadowed
+            out_img_mix_ns = self.base_img.copy() # Shadowless
             labels_poly_mix = []
             panel_augs_mix = []
+            
+            # Roll fresh consistent shadow properties for the MIX variant image
+            mix_angle = random.uniform(0, 2 * math.pi)
+            mix_sh_len = random.uniform(SHADOW_LENGTH_MIN, SHADOW_LENGTH_MAX)
+            mix_sh_dx = math.cos(mix_angle) * mix_sh_len
+            mix_sh_dy = math.sin(mix_angle) * mix_sh_len
+            mix_sh_blur = random.uniform(SHADOW_BLUR_MIN, SHADOW_BLUR_MAX)
             
             for p in self.placements:
                 random_panel_path = random.choice(self.panel_images)
@@ -799,11 +870,6 @@ class YoloObbApp:
                 auto_stretch_y = random.uniform(STRETCH_MIN, STRETCH_MAX)
                 auto_blur = random.uniform(BLUR_MIN, BLUR_MAX)
                 
-                sh_off_x = random.randint(SHADOW_OFFSET_MIN, SHADOW_OFFSET_MAX)
-                sh_off_y = random.randint(SHADOW_OFFSET_MIN, SHADOW_OFFSET_MAX)
-                sh_blur = random.uniform(SHADOW_BLUR_MIN, SHADOW_BLUR_MAX)
-                sh_opacity = random.uniform(SHADOW_OPACITY_MIN, SHADOW_OPACITY_MAX)
-                
                 scaled_panel_mix = panel_img_mix.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
                 
                 comp_mix, cw_mix, ch_mix = create_grid_composite(scaled_panel_mix, grid_shape)
@@ -816,8 +882,17 @@ class YoloObbApp:
                 auto_bright_mix = calculate_brightness_adjustment(self.base_img, img_geom_mix, px_mix, py_mix)
                 img_rot_mix = apply_photometry(img_geom_mix, auto_bright_mix, auto_noise, auto_blur)
                 
-                shadow_img_mix, pad_mix = create_shadow(img_rot_mix, sh_blur, sh_opacity)
-                out_img_mix.paste(shadow_img_mix, (px_mix + sh_off_x - pad_mix, py_mix + sh_off_y - pad_mix), mask=shadow_img_mix)
+                # Drop shadowless panel directly onto out_img_mix_ns
+                out_img_mix_ns.paste(img_rot_mix, (px_mix, py_mix), mask=img_rot_mix)
+                
+                # Calculate and drop shadowed panel onto out_img_mix
+                sh_opacity_mix = calculate_local_shadow_opacity(self.base_img, px_mix, py_mix, pw_comp_mix, ph_comp_mix)
+                shadow_img_mix, pad_mix = create_shadow(img_rot_mix, blur_radius=mix_sh_blur, opacity=sh_opacity_mix)
+                
+                shadow_px_mix = px_mix + mix_sh_dx - pad_mix
+                shadow_py_mix = py_mix + mix_sh_dy - pad_mix
+                
+                out_img_mix.paste(shadow_img_mix, (int(shadow_px_mix), int(shadow_py_mix)), mask=shadow_img_mix)
                 out_img_mix.paste(img_rot_mix, (px_mix, py_mix), mask=img_rot_mix)
                 
                 base_poly_mix = get_grid_polygon(grid_shape, cell_w, cell_h)
@@ -836,15 +911,17 @@ class YoloObbApp:
                     "blur_radius": round(float(auto_blur), 3),
                     "brightness_match_multiplier": round(float(auto_bright_mix), 3),
                     "shadow": {
-                        "offset_x": sh_off_x,
-                        "offset_y": sh_off_y,
-                        "blur_radius": round(float(sh_blur), 3),
-                        "opacity": round(float(sh_opacity), 3)
+                        "offset_x": round(float(mix_sh_dx), 3),
+                        "offset_y": round(float(mix_sh_dy), 3),
+                        "blur_radius": round(float(mix_sh_blur), 3),
+                        "opacity": round(float(sh_opacity_mix), 3)
                     }
                 })
                 
             base_name_mix = f"{original_filename}_mix"
-            out_img_mix.convert("RGB").save(os.path.join(IMG_DIR, f"{base_name_mix}.jpg"))
+            out_img_mix.convert("RGB").save(os.path.join(IMG_DIR, f"{base_name_mix}.jpg"), quality=95)
+            out_img_mix_ns.convert("RGB").save(os.path.join(NO_SHADOW_DIR, f"{base_name_mix}.jpg"), quality=95)
+            
             with open(os.path.join(LBL_DIR, f"{base_name_mix}.txt"), "w") as f:
                 for cls, pts in labels_poly_mix:
                     coords = " ".join([f"{pt[0]:.6f} {pt[1]:.6f}" for pt in pts])
@@ -854,7 +931,7 @@ class YoloObbApp:
             with open(os.path.join(META_DIR, f"{base_name_mix}.json"), "w") as f:
                 json.dump(mix_aug_data, f, indent=4)
                     
-            generate_dataset_variants(out_img_mix, labels_poly_mix, panel_augs_mix, base_name_mix)
+            generate_dataset_variants(out_img_mix, out_img_mix_ns, labels_poly_mix, panel_augs_mix, base_name_mix)
                 
             self.lbl_status.config(text="Zapisano pomyślnie. Ładowanie kolejnego tła...")
             
@@ -862,7 +939,7 @@ class YoloObbApp:
             
             if self.bg_images:
                 self.current_bg_idx = self.current_bg_idx % len(self.bg_images)
-                self.root.after(77, self.load_current_bg) 
+                self.root.after(11, self.load_current_bg) 
             else:
                 self.canvas.delete("all")
                 self.lbl_bg_info.config(text="Tło: 0/0")

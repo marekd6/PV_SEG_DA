@@ -84,7 +84,7 @@ def visualize_masks(images_dir, labels_dir):
 
 if __name__ == "__main__":
     # --- UPDATE THESE PATHS ---
-    IMAGES_FOLDER = 'dataset_yolo_seg8/images'
-    LABELS_FOLDER = 'dataset_yolo_seg8/labels'
+    IMAGES_FOLDER = 'dataset_yolo_seg33/images'
+    LABELS_FOLDER = 'dataset_yolo_seg33/labels'
     
     visualize_masks(IMAGES_FOLDER, LABELS_FOLDER)

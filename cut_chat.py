@@ -25,10 +25,11 @@ def tile_tif(
     input_path,
     output_dir,
     tile_size=512,
-    prefix="tile",
     ext="tif"
 ):
     os.makedirs(output_dir, exist_ok=True)
+
+    input_filename = os.path.splitext(os.path.basename(input_path))[0]
 
     with rasterio.open(input_path) as src:
         width = src.width
@@ -56,7 +57,7 @@ def tile_tif(
                     "transform": tile_transform
                 })
 
-                out_name = f"{prefix}_{y}_{x}.{ext}"
+                out_name = f"{input_filename}_{y}_{x}.{ext}"
                 out_path = os.path.join(output_dir, out_name)
 
                 with rasterio.open(out_path, "w", **tile_profile) as dst:
@@ -69,13 +70,11 @@ def tile_tif(
 
 if __name__ == "__main__":
     input_path = "C:/Users/admin/Desktop/inference_data/Inference_data/74865_1014763_N-34-50-C-c-4-4.tif"
-    output_dir = "C:/Users/admin/Desktop/inference_data/Inference_data/mck26v2"
+    output_dir = "C:/Users/admin/Desktop/inference_data/Inference_data/mck26"
     tile_size = 625
-    prefix = "tile"
 
     tile_tif(
         input_path=input_path,
         output_dir=output_dir,
         tile_size=tile_size,
-        prefix=prefix
     )

@@ -14,10 +14,10 @@ import shutil
 # ==============================================================================
 
 # Global Seed for Reproducibility (Set to None for unpredictable randomness)
-RANDOM_SEED = 42
+RANDOM_SEED = 131
 
 # Directories & Files
-OUTPUT_BASE_DIR = "dataset_yolo_seg33"
+OUTPUT_BASE_DIR = "dataset_yolo_seg35"
 IMG_DIR = os.path.join(OUTPUT_BASE_DIR, "images")
 NO_SHADOW_DIR = os.path.join(OUTPUT_BASE_DIR, "bez_cienia") 
 LBL_DIR = os.path.join(OUTPUT_BASE_DIR, "labels")
@@ -25,13 +25,13 @@ META_DIR = os.path.join(OUTPUT_BASE_DIR, "meta")
 REAL_DIR = os.path.join(OUTPUT_BASE_DIR, "rzeczywiste")
 SKIPPED_FILE = os.path.join(OUTPUT_BASE_DIR, "skipped.txt") 
 
-DEFAULT_BG_FOLDER = 'C:/Users/admin/Desktop/inference_data/Inference_data/mck26'
+DEFAULT_BG_FOLDER = 'C:/Users/admin/Desktop/inference_data/Inference_data/mck26v4'
 DEFAULT_PANEL_FOLDER = './pvs'
 
 # Grid Generation
 GRID_CELLS_MIN = 2
-GRID_CELLS_MAX = 6
-GRID_SHIFT_PROBABILITY = 0.25  # 20% chance for a staggered (half-shift) grid layout
+GRID_CELLS_MAX = 7
+GRID_SHIFT_PROBABILITY = 0.25  # 25% chance for a staggered (half-shift) grid layout
 
 # Panel Base Geometry (Locked per placement click)
 PANEL_SIZE_MIN = 22
@@ -70,7 +70,6 @@ UI_GHOST_SCALE_BASE = 33
 # Apply Seed globally if defined
 if RANDOM_SEED is not None:
     random.seed(RANDOM_SEED)
-    np.random.seed(RANDOM_SEED)
 
 # ==============================================================================
 # --- APPLICATION LOGIC ---
@@ -420,6 +419,10 @@ class YoloObbApp:
         
         self.saved_empty_bgs = set()
         
+        # --- NEW: Track total images for the label ---
+        self.total_initial_bgs = 0 
+        # -------------------------------------------
+
         # For UI preview purposes only
         self.ui_shadow_dx = 2.0
         self.ui_shadow_dy = 2.0
@@ -510,6 +513,10 @@ class YoloObbApp:
             
             self.bg_images = unprocessed
             
+            # --- NEW: Save the initial batch size ---
+            self.total_initial_bgs = len(self.bg_images)
+            # ----------------------------------------
+            
             if self.bg_images:
                 self.current_bg_idx = 0
                 self.load_current_bg()
@@ -534,7 +541,12 @@ class YoloObbApp:
         if not self.bg_images: return
         p = self.bg_images[self.current_bg_idx]
         self.base_img = Image.open(p).convert("RGBA")
-        self.lbl_bg_info.config(text=f"Tło: {self.current_bg_idx + 1} / {len(self.bg_images)}")
+        
+        # --- MODIFIED: Calculate absolute progress ---
+        processed_count = self.total_initial_bgs - len(self.bg_images)
+        current_display = processed_count + 1
+        self.lbl_bg_info.config(text=f"Tło: {current_display} / {self.total_initial_bgs}")
+        # -------------------------------------------
         
         # Roll a temporary shadow direction just for the ghost UI preview
         ui_angle = random.uniform(0, 2 * math.pi)
@@ -572,7 +584,7 @@ class YoloObbApp:
             self.load_current_bg()
         else:
             self.canvas.delete("all")
-            self.lbl_bg_info.config(text="Tło: 0/0")
+            self.lbl_bg_info.config(text=f"Tło: {self.total_initial_bgs} / {self.total_initial_bgs} (Koniec)")
             messagebox.showinfo("Koniec", "Nie ma więcej teł w kolejce.")
         
     def mark_as_real(self):
@@ -592,7 +604,7 @@ class YoloObbApp:
                 self.root.after(500, self.load_current_bg) 
             else:
                 self.canvas.delete("all")
-                self.lbl_bg_info.config(text="Tło: 0/0")
+                self.lbl_bg_info.config(text=f"Tło: {self.total_initial_bgs} / {self.total_initial_bgs} (Koniec)")
                 messagebox.showinfo("Koniec", "Nie ma więcej teł w kolejce.")
                 
         except Exception as e:
@@ -1052,10 +1064,10 @@ class YoloObbApp:
             
             if self.bg_images:
                 self.current_bg_idx = self.current_bg_idx % len(self.bg_images)
-                self.root.after(11, self.load_current_bg) 
+                self.root.after(77, self.load_current_bg) 
             else:
                 self.canvas.delete("all")
-                self.lbl_bg_info.config(text="Tło: 0/0")
+                self.lbl_bg_info.config(text=f"Tło: {self.total_initial_bgs} / {self.total_initial_bgs} (Koniec)")
                 messagebox.showinfo("Koniec", "Wszystkie tła zostały przetworzone!")
             
         except Exception as e:

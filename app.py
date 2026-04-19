@@ -486,7 +486,7 @@ class YoloObbApp:
     def load_bg_folder(self):
         folder = DEFAULT_BG_FOLDER
         if folder:
-            all_files = [f for f in os.listdir(folder) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            all_files = [f for f in os.listdir(folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.tif'))]
             
             existing_labels = os.listdir(LBL_DIR) if os.path.exists(LBL_DIR) else []
             existing_reals = os.listdir(REAL_DIR) if os.path.exists(REAL_DIR) else []

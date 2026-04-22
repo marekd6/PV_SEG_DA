@@ -511,6 +511,7 @@ class YoloObbApp:
                 if not has_labels and not is_real and not is_skipped:
                     unprocessed.append(os.path.join(folder, f))
             
+            random.shuffle(unprocessed)
             self.bg_images = unprocessed
             
             # --- NEW: Save the initial batch size ---

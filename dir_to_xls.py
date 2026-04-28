@@ -11,12 +11,12 @@ labs = os.path.join(DATADIR, 'annotations')
 imgs = os.path.join(DATADIR, 'images')
 
 for img in os.listdir(imgs):
-  data["image_path"].append(os.path.join(imgs, img))
-  data["mask_path"].append(os.path.join(labs, img.replace(".jpg", ".png")))
+  data["image_path"].append(os.path.abspath(os.path.join(imgs, img)))
+  data["mask_path"].append(os.path.abspath(os.path.join(labs, img.replace(".jpg", ".png"))))
 
 print('there are', len(data["image_path"]))
 
-csv_path = os.path.join(DATADIR, "test.csv")
+csv_path = os.path.join(DATADIR, "test_abs.csv")
 with open(csv_path, 'w', newline='') as f:
     writer = csv.DictWriter(f, fieldnames=["image_path", "mask_path"])
     # writer.writeheader()

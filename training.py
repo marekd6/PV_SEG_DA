@@ -181,6 +181,13 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
     test_dl_0 = DataLoader(test_data_0, batch_size=args.batch_size, num_workers=args.workers, shuffle=False)
     test_dl_1 = DataLoader(test_data_1, batch_size=args.batch_size, num_workers=args.workers, shuffle=False)
 
+
+    drei = len(test_paths) > 2
+    if drei:
+        test_data_2 = data.SegmentationDataset(test_paths[2], image_size=image_size, mask_size=mask_size, transform=processor, model_name=args.model_name)
+        test_dl_2 = DataLoader(test_data_2, batch_size=args.batch_size, num_workers=args.workers, shuffle=False)
+
+
     best_val_loss, best_val_model = None, None
 
     # if resume the checkpoint
@@ -194,13 +201,17 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
     if mod_pth:
         resume_ckpt = torch.load(mod_pth)
         model.load_state_dict(resume_ckpt)
-        print('loaded model', mod_pth)
+        print('loaded ready model', mod_pth)
 
     if id == 'ph1':
         test_loss, test_stats = eval_one_epoch(model, test_dl_0, criterion, -1, writer, image_size, args)
         print(f"pre synt-Epoch: {args.epochs}, test_loss: {test_loss}" + ", test_dice: {}, test_IoU: {}".format(test_stats["dice"], test_stats["iou"]))
         test_loss, test_stats = eval_one_epoch(model, test_dl_1, criterion, -1, writer, image_size, args)
         print(f"pre rzecz-Epoch: {args.epochs}, test_loss: {test_loss}" + ", test_dice: {}, test_IoU: {}".format(test_stats["dice"], test_stats["iou"]))
+        if drei:
+                test_loss, test_stats = eval_one_epoch(model, test_dl_2, criterion, -1, writer, image_size, args)
+                print(f"GDA-Epoch: {args.epochs}, test_loss: {test_loss}" + ", test_dice: {}, test_IoU: {}".format(test_stats["dice"], test_stats["iou"]))
+
 
 
     best_model_state = model.state_dict()
@@ -213,11 +224,11 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
         print(f"Epoch: {i}, train loss: {train_loss}, val_loss: {val_loss}" + ", val_dice: {}, val_IoU: {}".format(val_stats["dice"], val_stats["iou"]))
         print(id, 'train', train_stats)
         print(id, 'val', val_stats)
-        if i % 20 == 0:
+        if i % 3 == 0:
             model_dir = os.path.join(args.save_dir, args.exp_code)
             if not os.path.isdir(model_dir):
                 os.makedirs(model_dir, exist_ok=True)
-            mod_pthn = os.path.join(model_dir, f'model_{i}.pth')
+            mod_pthn = os.path.join(model_dir, f'model_{id}_{i}.pth')
             torch.save(model.state_dict(), mod_pthn)
 
         if best_val_loss is not None and val_loss > LOSS_DECAY_RAT_THR * best_val_loss:
@@ -240,5 +251,10 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
 
     test_loss, test_stats = eval_one_epoch(model, test_dl_1, criterion, -1, writer, image_size, args)
     print(f"rzecz-Epoch: {args.epochs}, test_loss: {test_loss}" + ", test_dice: {}, test_IoU: {}".format(test_stats["dice"], test_stats["iou"]))
+
+
+    if drei:
+        test_loss, test_stats = eval_one_epoch(model, test_dl_2, criterion, -1, writer, image_size, args)
+        print(f"GDA-Epoch: {args.epochs}, test_loss: {test_loss}" + ", test_dice: {}, test_IoU: {}".format(test_stats["dice"], test_stats["iou"]))
 
     return mod_pthn

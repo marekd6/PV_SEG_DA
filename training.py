@@ -9,7 +9,7 @@ import data, models, losses, metrics # type: ignore
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-LOSS_DECAY_RAT_THR = 1.23
+LOSS_DECAY_RAT_THR = 1.33 # till 22: 1.23
 
 
 def get_criterion(args):
@@ -162,6 +162,8 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
     test_data_0 = data.SegmentationDataset(test_paths[0], image_size=image_size, mask_size=mask_size, transform=processor, model_name=args.model_name)
     test_data_1 = data.SegmentationDataset(test_paths[1], image_size=image_size, mask_size=mask_size, transform=processor, model_name=args.model_name)
 
+    non_stop = not mod_pth.contains('ready') and id == 'ph1' # added after 25
+
     criterion = get_criterion(args)
     if "sam" in args.model_name:
       if args.optim == "adam":
@@ -210,7 +212,7 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
         print(f"pre rzecz-Epoch: {args.epochs}, test_loss: {test_loss}" + ", test_dice: {}, test_IoU: {}".format(test_stats["dice"], test_stats["iou"]))
         if drei:
                 test_loss, test_stats = eval_one_epoch(model, test_dl_2, criterion, -1, writer, image_size, args)
-                print(f"GDA-Epoch: {args.epochs}, test_loss: {test_loss}" + ", test_dice: {}, test_IoU: {}".format(test_stats["dice"], test_stats["iou"]))
+                print(f"pre GDA-Epoch: {args.epochs}, test_loss: {test_loss}" + ", test_dice: {}, test_IoU: {}".format(test_stats["dice"], test_stats["iou"]))
 
 
 
@@ -231,7 +233,7 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
             mod_pthn = os.path.join(model_dir, f'model_{id}_{i}.pth')
             torch.save(model.state_dict(), mod_pthn)
 
-        if best_val_loss is not None and val_loss > LOSS_DECAY_RAT_THR * best_val_loss:
+        if not non_stop and best_val_loss is not None and val_loss > LOSS_DECAY_RAT_THR * best_val_loss:
             print('loss decay threshold hit!', val_loss, best_val_loss, 'ep', i)
             break
         if best_val_loss is None or val_loss < best_val_loss:

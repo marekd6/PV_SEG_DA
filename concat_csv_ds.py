@@ -26,6 +26,7 @@ def concatenate_csvs(file1_path, file2_path, output_path):
           writer.writerow(row)
 
 subs = ['pnl0.csv', 'pnl1.csv', 'pnl2.csv', 'pnl3.csv', 'pnl4.csv', 'pnl5.csv', 'pnl6.csv', 'pnl7.csv', 'pnl8.csv', 'mix.csv', 'composite.csv']
+subs = [str(i)+'.csv' for i in range(15, 80, 10)]
 
 # synt = "/users/project1/pt01299/synt/segformer_dataset255_all/train/index.csv"
 synt = "/users/project1/pt01299/synt/segformer_dataset255_all/train/index_"

@@ -15,6 +15,7 @@ val_m = "/users/project1/pt01299/synt/mix_val.csv"
 train_m = "/users/project1/pt01299/synt/mix_train.csv"
 train_m = "/users/project1/pt01299/synt/mix_train_"
 subs = ['pnl0.csv', 'pnl1.csv', 'pnl2.csv', 'pnl3.csv', 'pnl4.csv', 'pnl5.csv', 'pnl6.csv', 'pnl7.csv', 'pnl8.csv', 'mix.csv', 'composite.csv']
+subs = [str(i)+'.csv' for i in range(15, 80, 10)]
 
 test_gda = '/users/project1/pt01299/synt/gda70/train/index_test.csv'
 val_gda = '/users/project1/pt01299/synt/gda70/train/index_val.csv'
@@ -30,6 +31,7 @@ args.model_name = "segformer-b5-ready"
 args.optim = "adamw"
 args.batch_size = 4
 args.exp_date = 78-1
+args.exp_date = 150
 
 for sub in subs:
 

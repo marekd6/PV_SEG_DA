@@ -35,7 +35,7 @@ def yolo_seg_to_segformer(yolo_dir: str, output_dir: str, bg_index: int = 0, cla
         out_img_dir = output_dir / split / 'images'
         out_ann_dir = output_dir / split / 'annotations'
         
-        out_img_dir.mkdir(parents=True, exist_ok=True)
+        # out_img_dir.mkdir(parents=True, exist_ok=True)
         out_ann_dir.mkdir(parents=True, exist_ok=True)
 
         images = list(img_dir.glob('*.*'))
@@ -85,9 +85,9 @@ def yolo_seg_to_segformer(yolo_dir: str, output_dir: str, bg_index: int = 0, cla
 
 if __name__ == "__main__":
 
-    INPUT_YOLO_DIR = "./dataset_split_all" 
+    INPUT_YOLO_DIR = "/users/project1/pt01299/synt/gda" 
     
-    OUTPUT_SEGFORMER_DIR = "./segformer_dataset255_all" 
+    OUTPUT_SEGFORMER_DIR = "/users/project1/pt01299/synt/gda" 
     
     print("Starting conversion...")
     yolo_seg_to_segformer(INPUT_YOLO_DIR, OUTPUT_SEGFORMER_DIR, bg_index=0, class_id=255)

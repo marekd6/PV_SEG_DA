@@ -6,8 +6,8 @@ from PIL import Image
 from tqdm import tqdm
 
 # --- Configurations ---
-INPUT_MASK_DIR = r"/content/drive/MyDrive/solar_PV/data/US/masks_full/"
-OUTPUT_LABEL_DIR = r"/content/drive/MyDrive/solar_PV/data/US/labels_restored/"
+INPUT_MASK_DIR = '/users/project1/pt01299/synt/DK/osfstorage/dataset_v2/solardk_dataset_neurips_v2/herlev_test/test/mask'
+OUTPUT_LABEL_DIR = '/users/project1/pt01299/synt/DK/osfstorage/dataset_v2/solardk_dataset_neurips_v2/herlev_test/test/mask_txt'
 
 # The pixel value representing the background (usually 0 or 255)
 BACKGROUND_INDEX = 0

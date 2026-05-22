@@ -114,7 +114,7 @@ def train_one_epoch(model, train_dl, epoch, criterion, optimizer, args, id):
             lr = optimizer.param_groups[0]["lr"]
             lrenc = optimizer.param_groups[0]["lrenc"]
             lrdec = optimizer.param_groups[0]["lrdec"]
-            print(f"Batch {i+1} | Loss: {loss_info['loss'].item():.4f} | Learning rate: {lr: .6f} | lrenc: {lrenc: .6f} | lrdec: {lrdec: .6f}")
+            print(f"Batch {i+1} | Loss: {loss_info['loss'].item():.4f} | Learning rate: {lr: .9f} | lrenc: {lrenc: .9f} | lrdec: {lrdec: .9f}")
 
         # preds_gather.append(predicted_masks.detach().cpu())
         # labels_gather.append(ground_truth_masks.detach().cpu())

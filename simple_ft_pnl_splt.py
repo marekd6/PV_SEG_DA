@@ -2,6 +2,7 @@ import wandb
 import training
 import params as args # type: ignore
 import types
+from torch import cuda
 
 # data paths
 test_s = "/users/project1/pt01299/synt/segformer_dataset255_all/test/index.csv"
@@ -193,6 +194,8 @@ def train():
     mod_pth = training.train_model(trains[1], vals[1], [test_s, test_r, test_gda], writer, mod_pth, 2, config)
     mod_pth = training.train_model(trains[2], vals[2], [test_s, test_r, test_gda], writer, mod_pth, 3, config)
 
+    cuda.empty_cache() # magic
+
 # ==========================================
 # 3. LAUNCH THE SWEEP AGENT
 # ==========================================
@@ -205,6 +208,6 @@ if __name__ == "__main__":
     
     # Start the agent to execute the runs locally.
     # count=10 tells the agent to run 10 different parameter combinations before stopping.
-    wandb.agent(sweep_id, function=train, count=1)
+    wandb.agent(sweep_id, function=train, count=12)
 
 # sub potem albo jako baza na początek (60%?)

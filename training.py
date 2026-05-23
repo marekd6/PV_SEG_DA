@@ -152,8 +152,9 @@ def eval_one_epoch(model, val_dl, criterion, epoch, writer, image_size, args, id
 
             if batch_idx == 0 and args.report_to == "wandb":
                 predicted_masks_ = torch.nn.functional.interpolate(predicted_masks.unsqueeze(1), size=(image_size, image_size), mode="bilinear", align_corners=False).squeeze()
+                predicted_masks_ = torch.sigmoid(predicted_masks_)  # Convert logits to probabilities [0, 1]
                 ground_truth_masks_ = torch.nn.functional.interpolate(ground_truth_masks.unsqueeze(1), size=(image_size, image_size), mode="bilinear", align_corners=False).squeeze()
-                log_image_samples(writer, id+"_val" if epoch != -1 else id+"_test", val_batch["pixel_values"], ground_truth_masks_, predicted_masks_, image_size=image_size)
+                log_image_samples(writer, str(id)+"_val" if epoch != -1 else str(id)+"_test", val_batch["pixel_values"], ground_truth_masks_, predicted_masks_, image_size=image_size)
 # ---------------------------------------------------******************************************************
             preds_gather.append(predicted_masks.detach().cpu())
             labels_gather.append(ground_truth_masks.detach().cpu())

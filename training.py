@@ -30,40 +30,51 @@ def get_criterion(args):
     return criterion
 
 
-def adjust_learning_rate(optimizer, epoch, args, id):
-    """Decay the learning rate with half-cycle cosine after warmup"""
-    warmup_epochs, lr, min_lr, lrenc, lrdec = 0, 0, 0, 0, 0
+def adjust_learning_rate(optimizer, epoch, args, id, schedule="cosine", power=0.9):
+    warmup_epochs, min_lr, base_lrenc, base_lrdec = 0, 0, 0, 0
     if id == 1:
-        warmup_epochs, lr, min_lr, lrenc, lrdec, epochs = args.warmup_epochs1, args.lr1, args.min_lr1, args.lrenc1, args.lrdec1, args.epochs1
+        warmup_epochs, base_lrenc, base_lrdec, epochs = args.warmup_epochs1, args.lrenc1, args.lrdec1, args.epochs1
     if id == 2:
-        warmup_epochs, lr, min_lr, lrenc, lrdec, epochs = args.warmup_epochs2, args.lr2, args.min_lr2, args.lrenc2, args.lrdec2, args.epochs2
+        warmup_epochs, base_lrenc, base_lrdec, epochs = args.warmup_epochs2, args.lrenc2, args.lrdec2, args.epochs2
     if id == 3:
-        warmup_epochs, lr, min_lr, lrenc, lrdec, epochs = args.warmup_epochs3, args.lr3, args.min_lr3, args.lrenc3, args.lrdec3, args.epochs3
+        warmup_epochs, base_lrenc, base_lrdec, epochs = args.warmup_epochs3, args.lrenc3, args.lrdec3, args.epochs3
+    # min_lr = base_lrdec / 222
 
-    while min_lr > lr:
-        min_lr /= 5
-
-    if epoch < warmup_epochs:
-        lr = lr * epoch / warmup_epochs 
-        lrenc = lrenc * epoch / warmup_epochs 
-        lrdec = lrdec * epoch / warmup_epochs 
+    # 1. Calculate the decay multiplier based on the current epoch
+    if warmup_epochs > 0 and epoch < warmup_epochs:
+        multiplier = epoch / warmup_epochs
     else:
-        lr = min_lr + (lr - min_lr) * 0.5 * \
-            (1. + math.cos(math.pi * (epoch - warmup_epochs) / (epochs - warmup_epochs)))
-        lrenc = min_lr + (lrenc - min_lr) * 0.5 * \
-            (1. + math.cos(math.pi * (epoch - warmup_epochs) / (epochs - warmup_epochs)))
-        lrdec = min_lr + (lrdec - min_lr) * 0.5 * \
-            (1. + math.cos(math.pi * (epoch - warmup_epochs) / (epochs - warmup_epochs)))
-    for param_group in optimizer.param_groups:
-        if "lr_scale" in param_group:
-            param_group["lr"] = lr * param_group["lr_scale"]
-            param_group["lrenc"] = lrenc * param_group["lr_scale"]
-            param_group["lrdec"] = lrdec * param_group["lr_scale"]
+        progress = (epoch - warmup_epochs) / max(1, epochs - warmup_epochs)
+        if schedule == "cosine":
+            multiplier = 0.5 * (1.0 + math.cos(math.pi * progress))
+        elif schedule == "poly":
+            multiplier = (1.0 - progress) ** power
         else:
-            param_group["lr"] = lr
-            param_group["lrenc"] = lrenc
-            param_group["lrdec"] = lrdec
-    return lr, lrenc, lrdec
+            raise ValueError(f"Unsupported schedule: {schedule}")
+
+    # 2. Calculate the specific learning rates for this epoch
+    curr_lrenc = min_lr + (base_lrenc - min_lr) * multiplier
+    curr_lrdec = min_lr + (base_lrdec - min_lr) * multiplier
+    lrs = {f'{id}_lrenc': curr_lrenc, f'{id}_lrdec': curr_lrdec}
+    wandb.log(lrs)
+
+    # 3. Apply to the optimizer groups
+    for param_group in optimizer.param_groups:
+        group_name = param_group.get('name')
+        
+        if group_name == 'encoder':
+            target_lr = curr_lrenc
+        elif group_name == 'decoder':
+            target_lr = curr_lrdec
+        else:
+            target_lr = curr_lrenc 
+
+        if "lr_scale" in param_group:
+            target_lr = target_lr * param_group["lr_scale"]
+            
+        param_group["lr"] = target_lr
+        
+    return curr_lrenc, curr_lrdec
 
 
 def log_image_samples(writer, split, imgs, labels, predictions, image_size):
@@ -91,7 +102,7 @@ def train_one_epoch(model, train_dl, epoch, criterion, optimizer, args, id):
     preds_gather, labels_gather = [], []
 
     for i, batch in enumerate(tqdm(train_dl, desc="Start training the model for one epoch...")):
-        adjust_learning_rate(optimizer, float(i) / len(train_dl) + epoch, args, id)
+        adjust_learning_rate(optimizer, float(i) / len(train_dl) + epoch, args, id, args.lr_scheduler)
 
         outputs = model(batch["pixel_values"].to(args.device))
         predicted_masks = outputs.logits.squeeze()
@@ -103,18 +114,13 @@ def train_one_epoch(model, train_dl, epoch, criterion, optimizer, args, id):
 
         optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         if len(train_stats) == 0:  # first batch
             train_stats = {k: v.item() for k, v in loss_info.items()}
         else:
             train_stats = {k: train_stats[k] + loss_info[k].item() for k in train_stats}
-
-        if (i + 1) % 20 == 0:
-            lr = optimizer.param_groups[0]["lr"]
-            lrenc = optimizer.param_groups[0]["lrenc"]
-            lrdec = optimizer.param_groups[0]["lrdec"]
-            print(f"Batch {i+1} | Loss: {loss_info['loss'].item():.4f} | Learning rate: {lr: .9f} | lrenc: {lrenc: .9f} | lrdec: {lrdec: .9f}")
 
         # preds_gather.append(predicted_masks.detach().cpu())
         # labels_gather.append(ground_truth_masks.detach().cpu())
@@ -172,11 +178,11 @@ def eval_one_epoch(model, val_dl, criterion, epoch, writer, image_size, args, id
 def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
     # config - hyperparams
     if id == 1:
-        lrenc, lrdec, lr, wd, optim, batch_size, epochs, iou_decay_fact = args.lrenc1, args.lrdec1, args.lr1, args.wd1, args.optim1, args.batch_size1, args.epochs1, args.iou_decay_fact1
-    if id == 2:
-        lrenc, lrdec, lr, wd, optim, batch_size, epochs, iou_decay_fact = args.lrenc2, args.lrdec2, args.lr2, args.wd2, args.optim2, args.batch_size2, args.epochs2, args.iou_decay_fact2
-    if id == 3:
-        lrenc, lrdec, lr, wd, optim, batch_size, epochs, iou_decay_fact = args.lrenc3, args.lrdec3, args.lr3, args.wd3, args.optim3, args.batch_size3, args.epochs3, args.iou_decay_fact3
+        lrenc, lrdec, wd, optim, batch_size, epochs, iou_decay_fact = args.lrenc1, args.lrdec1, args.wd1, args.optim, args.batch_size1, args.epochs1, args.iou_decay_fact1
+    # if id == 2:
+        # lrenc, lrdec, wd, optim, batch_size, epochs, iou_decay_fact = args.lrenc2, args.lrdec2, args.lr2, args.wd2, args.optim, args.batch_size2, args.epochs2, args.iou_decay_fact2
+    # if id == 3:
+        # lrenc, lrdec, wd, optim, batch_size, epochs, iou_decay_fact = args.lrenc3, args.lrdec3, args.lr3, args.wd3, args.optim, args.batch_size3, args.epochs3, args.iou_decay_fact3
     start_epoch, eps_done, eps_best = 0, epochs, 0
 
     model_dir = os.path.join(args.save_dir, writer.id)
@@ -196,11 +202,11 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
             backbone_params.append(param)
         else:
             head_params.append(param)
-    opt_mod_params = [{'params': backbone_params, 'lr': lrenc}, {'params': head_params, 'lr': lrdec}]
+    opt_mod_params = [{'params': backbone_params, 'lr': lrenc, 'name': 'encoder'}, {'params': head_params, 'lr': lrdec, 'name': 'decoder'}]
     if optim == "adam":
-        optimizer = torch.optim.Adam(opt_mod_params, lr=lr, weight_decay=wd)
+        optimizer = torch.optim.Adam(opt_mod_params, weight_decay=wd)
     elif optim == "adamw":
-        optimizer = torch.optim.AdamW(opt_mod_params, lr=lr, weight_decay=wd)
+        optimizer = torch.optim.AdamW(opt_mod_params, weight_decay=wd)
   
     # data
     undsc = '_' if args.sub != '' else ''
@@ -252,9 +258,9 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
           log_stats[f'{id}_epoch'] = i
           wandb.log(log_stats)
 
-        if i % args.eps_save == 0:
-            mod_pthn = os.path.join(model_dir, f'model_ph{id}_{i}.pth')
-            torch.save(model.state_dict(), mod_pthn)
+        # if i > 0 and i % args.eps_save == 0:
+        #     mod_pthn = os.path.join(model_dir, f'model_ph{id}_{i}.pth')
+        #     torch.save(model.state_dict(), mod_pthn)
 
         if best_val_iou is not None and val_iou < iou_decay_fact * best_val_iou:
             print('iou decay threshold hit!', val_iou, best_val_loss, 'ep', i)

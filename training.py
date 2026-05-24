@@ -16,6 +16,9 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 
 
+GPU_BS = 8
+
+
 def get_criterion(args):
     criteria = {
         "bce": losses.BCECriterion(),
@@ -99,7 +102,11 @@ def log_image_samples(writer, split, imgs, labels, predictions, image_size):
 def train_one_epoch(model, train_dl, epoch, criterion, optimizer, args, id):
     model.train()
     train_stats = {}
-    preds_gather, labels_gather = [], []
+    optimizer.zero_grad()
+    bs, acc_steps = args.batch_size1, 1
+    if bs > GPU_BS:
+        acc_steps = max(1, bs // GPU_BS)
+        bs = GPU_BS
 
     for i, batch in enumerate(tqdm(train_dl, desc="Start training the model for one epoch...")):
         adjust_learning_rate(optimizer, float(i) / len(train_dl) + epoch, args, id, args.lr_scheduler)
@@ -108,27 +115,26 @@ def train_one_epoch(model, train_dl, epoch, criterion, optimizer, args, id):
         predicted_masks = outputs.logits.squeeze()
         ground_truth_masks = batch["ground_truth_mask"].float().to(args.device)
         if len(predicted_masks.shape) == 2:
-          predicted_masks = predicted_masks.unsqueeze(0)
+            predicted_masks = predicted_masks.unsqueeze(0)
+            
         loss_info = criterion(predicted_masks, ground_truth_masks)
-        loss = loss_info["loss"]
-
-        optimizer.zero_grad()
+        loss = loss_info["loss"] / acc_steps
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
+        
+        is_accumulation_step = (i + 1) % acc_steps == 0
+        is_last_batch = (i + 1) == len(train_dl)
+        
+        if is_accumulation_step or is_last_batch:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+            optimizer.zero_grad()
 
         if len(train_stats) == 0:  # first batch
             train_stats = {k: v.item() for k, v in loss_info.items()}
         else:
             train_stats = {k: train_stats[k] + loss_info[k].item() for k in train_stats}
 
-        # preds_gather.append(predicted_masks.detach().cpu())
-        # labels_gather.append(ground_truth_masks.detach().cpu())
-
     train_stats = {k: train_stats[k] / len(train_dl) for k in train_stats}
-    # preds_gather = torch.cat(preds_gather, dim=0) > 0.0  # also in logit space
-    # labels_gather = torch.cat(labels_gather, dim=0).bool()
-    # seg_metrics = metrics.segmentation_metrics(preds_gather, labels_gather)
 
     return train_stats["loss"], train_stats
 
@@ -184,6 +190,7 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
     # if id == 3:
         # lrenc, lrdec, wd, optim, batch_size, epochs, iou_decay_fact = args.lrenc3, args.lrdec3, args.lr3, args.wd3, args.optim, args.batch_size3, args.epochs3, args.iou_decay_fact3
     start_epoch, eps_done, eps_best = 0, epochs, 0
+    batch_size = min(GPU_BS, batch_size) # *****************************
 
     model_dir = os.path.join(args.save_dir, writer.id)
     if not os.path.isdir(model_dir):
@@ -277,6 +284,7 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
     mod_pthn = os.path.join(model_dir, f'model_ph{id}.pth')
     txt_pth = os.path.join(model_dir, f'stats_ph{id}.txt')
     torch.save(best_model_state, mod_pthn)
+    model.load_state_dict(best_model_state) # !!!!!!!!!!!!!
     print('phase stats start, name, loss, iou best')
     print(mod_pthn, best_val_loss, best_val_iou)
     print('val_losses', val_losses)

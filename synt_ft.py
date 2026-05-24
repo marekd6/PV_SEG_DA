@@ -35,13 +35,13 @@ sweep_config = {
             "values": ['']
         },   
         "batch_size1": {
-            "values": [4, 8, 16]
+            "values": [4, 8, 16, 32]
         },        
         "warmup_epochs1": {
             "values": [0, 4, 2]
         },
         "wd1": {
-            "values": [0, 0.1, 0.01, 0.05]
+            "values": [0.1, 0.01, 0.05]
         },
         "lrenc1": {
             "values": [1e-6, 5e-6, 8e-6]
@@ -79,5 +79,5 @@ def train():
 
 
 if __name__ == "__main__":
-    sweep_id = wandb.sweep(sweep_config, project="pv_ftS")
+    sweep_id = wandb.sweep(sweep_config, project="pv_ftS1")
     wandb.agent(sweep_id, function=train, count=16)

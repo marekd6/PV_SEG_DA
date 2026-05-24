@@ -24,7 +24,7 @@ writer = '' # ***********************************************************
 workers = 12  # Number of dataloader workers
 save_dir = "/users/project1/pt01299/synt/fts2"
 
-epochs1 = 10
+epochs1 = 12
 batch_size1 = 4
 warmup_epochs1 = 0
 wd1 = 0

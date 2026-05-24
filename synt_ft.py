@@ -1,3 +1,8 @@
+'''
+entry point to define and run tuning scenarios
+stage 1: SYNT/SYNT or GDA
+'''
+
 import wandb
 import training
 import params_synt as args # type: ignore
@@ -18,7 +23,6 @@ full_gda = '/users/project1/pt01299/synt/gda70/train/index.csv'
 
 
 # params
-subs = ['pnl0.csv', 'pnl1.csv', 'pnl2.csv', 'pnl3.csv', 'pnl4.csv', 'pnl5.csv', 'pnl6.csv', 'pnl7.csv', 'pnl8.csv', 'mix.csv', 'composite.csv']
 subs = ['', 'pnl0', 'pnl1', 'pnl2', 'pnl3', 'pnl4', 'pnl5', 'pnl6', 'pnl7', 'pnl8', 'mix', 'composite']
 subs.extend([str(i) for i in range(15, 80, 10)])
 
@@ -30,24 +34,28 @@ sweep_config = {
         "goal": "maximize"
     },
     "parameters": {
+        "val": {
+            # "values": [val_s] # S2
+            "values": [val_gda]
+        },
         "sub": {
-            # "values": subs
+            # "values": subs # S3
             "values": ['']
         },   
         "batch_size1": {
             "values": [4, 8, 16, 32]
         },        
         "warmup_epochs1": {
-            "values": [0, 4, 2]
+            "values": [4, 2, 6]
         },
         "wd1": {
             "values": [0.1, 0.01, 0.05]
         },
         "lrenc1": {
-            "values": [1e-6, 5e-6, 8e-6]
+            "values": [1e-6, 5e-6, 8e-6, 5e-5]
         },        
         "lrdec1": {
-            "values": [1e-6, 5e-6, 8e-5, 1e-5]
+            "values": [5e-6, 8e-5, 1e-5, 5e-4]
         },
 
         "lr_scheduler": {
@@ -73,7 +81,7 @@ def train():
     for k, v in config.items():
         print(k, '=', v)
 
-    training.train_model(train_s, val_gda, [test_s, test_r, test_gda], writer, None, 1, config)
+    training.train_model(train_s, config.val, [test_s, test_r, test_gda], writer, None, 1, config)
 
     cuda.empty_cache() # magic
 

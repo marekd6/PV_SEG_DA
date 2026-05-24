@@ -204,7 +204,7 @@ if __name__ == "__main__":
     # Note: If running on SLURM, you typically run this line once on your laptop, 
     # and pass the resulting sweep_id directly into wandb.agent() in your SLURM script.
     sweep_id = wandb.sweep(sweep_config, project="pv_da")
-    # sweep_id = 'celestial-sweep-1'
+    # sweep_id = 'f7qcq2uh'
     
     # Start the agent to execute the runs locally.
     # count=10 tells the agent to run 10 different parameter combinations before stopping.

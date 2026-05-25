@@ -11,12 +11,13 @@ import numpy as np
 import wandb
 import torch
 import data, models, losses, metrics # type: ignore
-
+from transformers import get_scheduler
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
 
 GPU_BS = 8
+LR_DECAY = 0.85
 
 
 def get_criterion(args):
@@ -31,6 +32,98 @@ def get_criterion(args):
     assert args.loss.lower() in criteria, f"Unknown loss type {args.loss}."
     criterion = criteria[args.loss.lower()]
     return criterion
+
+
+def get_optimiser0(model, encoder_lr, decoder_lr, weight_decay, llrd_decay_rate):
+    """
+    Slices the model into distinct stages and assigns specific LRs and Weight Decays.
+    """
+    # Dictionary to hold our cleaned-up parameter groups
+    groups = {}
+    
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+            
+        # 1. Identify the stage and assign a clean name for logging
+        if "decode_head" in name:
+            layer_id, layer_name = 5, "decoder"
+        elif "patch_embeddings" in name:
+            layer_id, layer_name = 0, "encoder_patch_embed"
+        elif "encoder.block" in name:
+            stage_idx = int(name.split("encoder.block.")[1].split(".")[0]) + 1
+            layer_id, layer_name = stage_idx, f"encoder_stage_{stage_idx}"
+        else:
+            layer_id, layer_name = 0, "other"
+
+        # 2. Apply Layer-Wise Decay Math
+        if layer_id == 5:
+            lr = decoder_lr
+        else:
+            lr = encoder_lr * (llrd_decay_rate ** (4 - layer_id))
+            
+        # 3. Mask Weight Decay for 1D Tensors (biases/layernorms)
+        wd = 0.0 if param.ndim == 1 or name.endswith(".bias") else weight_decay
+        
+        # 4. Group parameters that share the exact same Name, LR, and WD
+        group_key = (layer_name, lr, wd)
+        if group_key not in groups:
+            groups[group_key] = {"params": [], "lr": lr, "weight_decay": wd, "name": layer_name}
+        
+        groups[group_key]["params"].append(param)
+        
+    return torch.optim.AdamW(list(groups.values()), lr=encoder_lr)
+
+
+def get_optimiser(model, encoder_lr, decoder_lr, weight_decay, llrd_decay_rate):
+    groups = {}
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        if "decode_head" in name:
+            layer_id, layer_name = 5, "decoder"         
+        elif "encoder.patch_embeddings." in name:
+            stage_idx = int(name.split("encoder.patch_embeddings.")[1].split(".")[0])
+            layer_id, layer_name = stage_idx + 1, f"encoder_stage_{stage_idx + 1}"            
+        elif "encoder.block." in name:
+            stage_idx = int(name.split("encoder.block.")[1].split(".")[0])
+            layer_id, layer_name = stage_idx + 1, f"encoder_stage_{stage_idx + 1}"         
+        elif "encoder.layer_norm." in name:
+            stage_idx = int(name.split("encoder.layer_norm.")[1].split(".")[0])
+            layer_id, layer_name = stage_idx + 1, f"encoder_stage_{stage_idx + 1}"      
+        else:
+            layer_id, layer_name = 0, "other"
+
+        if layer_id == 5:
+            lr = decoder_lr
+        else:
+            lr = encoder_lr * (llrd_decay_rate ** (4 - layer_id))
+        
+        wd = 0.0 if param.ndim == 1 or name.endswith(".bias") else weight_decay
+        group_key = (layer_name, lr, wd)
+        if group_key not in groups:
+            groups[group_key] = {"params": [], "lr": lr, "weight_decay": wd, "name": layer_name}  
+        groups[group_key]["params"].append(param)
+        
+    return torch.optim.AdamW(list(groups.values()), lr=encoder_lr)
+
+
+def get_lr_scheduler(optimiser, args):
+    bs, acc_steps = args.batch_size, 1
+    if bs > GPU_BS:
+        acc_steps = max(1, bs // GPU_BS)
+        bs = GPU_BS
+    optimize_steps_per_epoch = bs // acc_steps
+    total_optimize_steps = optimize_steps_per_epoch * args.epochs
+    warmup_steps = optimize_steps_per_epoch * args.warmup_epochs
+    return get_scheduler(
+        name=args.lr_scheduler,
+        optimizer=optimiser,
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_optimize_steps,
+        lr_end=1e-8, # ///////////////////
+        power=0.9 # ////////////////////
+    )
 
 
 def adjust_learning_rate(optimizer, epoch, args, id, schedule="cosine", power=0.9):
@@ -99,18 +192,17 @@ def log_image_samples(writer, split, imgs, labels, predictions, image_size):
     )
 
 
-def train_one_epoch(model, train_dl, epoch, criterion, optimizer, args, id):
+def train_one_epoch(model, train_dl, scheduler, criterion, optimizer, args, id, curr_step=0):
     model.train()
     train_stats = {}
     optimizer.zero_grad()
-    bs, acc_steps = args.batch_size1, 1
+    bs, acc_steps = args.batch_size, 1
     if bs > GPU_BS:
         acc_steps = max(1, bs // GPU_BS)
         bs = GPU_BS
 
     for i, batch in enumerate(tqdm(train_dl, desc="Start training the model for one epoch...")):
-        adjust_learning_rate(optimizer, float(i) / len(train_dl) + epoch, args, id, args.lr_scheduler)
-
+        # adjust_learning_rate(optimizer, float(i) / len(train_dl) + epoch, args, id, args.lr_scheduler)
         outputs = model(batch["pixel_values"].to(args.device))
         predicted_masks = outputs.logits.squeeze()
         ground_truth_masks = batch["ground_truth_mask"].float().to(args.device)
@@ -127,7 +219,11 @@ def train_one_epoch(model, train_dl, epoch, criterion, optimizer, args, id):
         if is_accumulation_step or is_last_batch:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
+            scheduler.step()
             optimizer.zero_grad()
+            if args.report_to == "wandb" and curr_step % 10 == 0:
+                wandb.log({f"{id}_lr/{group['name']}": group["lr"] for group in optimizer.param_groups}, step=curr_step)
+            curr_step += 1
 
         if len(train_stats) == 0:  # first batch
             train_stats = {k: v.item() for k, v in loss_info.items()}
@@ -136,7 +232,7 @@ def train_one_epoch(model, train_dl, epoch, criterion, optimizer, args, id):
 
     train_stats = {k: train_stats[k] / len(train_dl) for k in train_stats}
 
-    return train_stats["loss"], train_stats
+    return train_stats["loss"], train_stats, curr_step
 
 
 def eval_one_epoch(model, val_dl, criterion, epoch, writer, image_size, args, id):
@@ -149,9 +245,7 @@ def eval_one_epoch(model, val_dl, criterion, epoch, writer, image_size, args, id
             if "segformer" in args.model_name:
               outputs = model(val_batch["pixel_values"].to(args.device))
               predicted_masks = outputs.logits.squeeze()
-            else:
-              outputs = model(val_batch["pixel_values"].to(args.device))
-              predicted_masks = outputs.squeeze()
+
             ground_truth_masks = val_batch["ground_truth_mask"].float().to(args.device)
             if len(predicted_masks.shape) == 2:
               predicted_masks = predicted_masks.unsqueeze(0)
@@ -167,7 +261,7 @@ def eval_one_epoch(model, val_dl, criterion, epoch, writer, image_size, args, id
                 predicted_masks_ = torch.sigmoid(predicted_masks_)  # Convert logits to probabilities [0, 1]
                 ground_truth_masks_ = torch.nn.functional.interpolate(ground_truth_masks.unsqueeze(1), size=(image_size, image_size), mode="bilinear", align_corners=False).squeeze()
                 log_image_samples(writer, str(id)+"_val" if epoch != -1 else str(id)+"_test", val_batch["pixel_values"], ground_truth_masks_, predicted_masks_, image_size=image_size)
-# ---------------------------------------------------******************************************************
+
             preds_gather.append(predicted_masks.detach().cpu())
             labels_gather.append(ground_truth_masks.detach().cpu())
 
@@ -183,14 +277,9 @@ def eval_one_epoch(model, val_dl, criterion, epoch, writer, image_size, args, id
 
 def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
     # config - hyperparams
-    if id == 1:
-        lrenc, lrdec, wd, optim, batch_size, epochs, iou_decay_fact = args.lrenc1, args.lrdec1, args.wd1, args.optim, args.batch_size1, args.epochs1, args.iou_decay_fact1
-    # if id == 2:
-        # lrenc, lrdec, wd, optim, batch_size, epochs, iou_decay_fact = args.lrenc2, args.lrdec2, args.lr2, args.wd2, args.optim, args.batch_size2, args.epochs2, args.iou_decay_fact2
-    # if id == 3:
-        # lrenc, lrdec, wd, optim, batch_size, epochs, iou_decay_fact = args.lrenc3, args.lrdec3, args.lr3, args.wd3, args.optim, args.batch_size3, args.epochs3, args.iou_decay_fact3
-    start_epoch, eps_done, eps_best = 0, epochs, 0
-    batch_size = min(GPU_BS, batch_size) # *****************************
+    lrenc, lrdec, wd, batch_size, epochs, iou_decay_fact = args.lrenc, args.lrdec, args.wd, args.batch_size, args.epochs, args.iou_decay_fact
+    start_epoch, eps_done, eps_best, curr_step = 0, epochs, 0, 0
+    batch_size = min(GPU_BS, batch_size)
 
     model_dir = os.path.join(args.save_dir, writer.id)
     if not os.path.isdir(model_dir):
@@ -200,20 +289,8 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
     model, processor, image_size, mask_size = models.load_model(args.model_name, args.device)
     best_model_state = model.state_dict()
     criterion = get_criterion(args)
-
-    # optimiser
-    backbone_params = []
-    head_params = []
-    for name, param in model.named_parameters():
-        if any(keyword in name for keyword in ['backbone', 'segformer', 'encoder']):
-            backbone_params.append(param)
-        else:
-            head_params.append(param)
-    opt_mod_params = [{'params': backbone_params, 'lr': lrenc, 'name': 'encoder'}, {'params': head_params, 'lr': lrdec, 'name': 'decoder'}]
-    if optim == "adam":
-        optimizer = torch.optim.Adam(opt_mod_params, weight_decay=wd)
-    elif optim == "adamw":
-        optimizer = torch.optim.AdamW(opt_mod_params, weight_decay=wd)
+    optimizer = get_optimiser(model, lrenc, lrdec, wd, args.lr_layer_decay)
+    scheduler = get_lr_scheduler(optimizer, args)
   
     # data
     undsc = '_' if args.sub != '' else ''
@@ -238,25 +315,16 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
         model.load_state_dict(resume_ckpt)
         print('loaded ready model', mod_pth)
 
-    # init test
-    # if id == 'ph1':
-    #     test_loss, test_stats = eval_one_epoch(model, test_dl_0, criterion, -1, writer, image_size, args)
-    #     print(f"pre synt-Epoch: {args.epochs}, test_loss: {test_loss}" + ", test_dice: {}, test_IoU: {}".format(test_stats["dice"], test_stats["iou"]))
-    #     test_loss, test_stats = eval_one_epoch(model, test_dl_1, criterion, -1, writer, image_size, args)
-    #     print(f"pre rzecz-Epoch: {args.epochs}, test_loss: {test_loss}" + ", test_dice: {}, test_IoU: {}".format(test_stats["dice"], test_stats["iou"]))
-    #     test_loss, test_stats = eval_one_epoch(model, test_dl_2, criterion, -1, writer, image_size, args)
-    #     print(f"pre GDA-Epoch: {args.epochs}, test_loss: {test_loss}" + ", test_dice: {}, test_IoU: {}".format(test_stats["dice"], test_stats["iou"]))
-
     # training for epochs
     for i in range(start_epoch, epochs):
-        train_loss, train_stats = train_one_epoch(model, train_dl, i, criterion, optimizer, args, id)
-        train_losses.append(train_loss)
-
+        train_loss, train_stats, curr_step = train_one_epoch(model, train_dl, scheduler, criterion, optimizer, args, id, curr_step)
         val_loss, val_stats = eval_one_epoch(model, val_dl, criterion, i, writer, image_size, args, id)
         val_iou = val_stats["iou"]
+
         print(f"Epoch: {i}, train loss: {train_loss}, val_loss: {val_loss}" + ", val_dice: {}, val_IoU: {}".format(val_stats["dice"], val_iou))
         print(f'ph_{id}', f'ep_{i}', 'train', train_stats)
         print(f'ph_{id}', f'ep_{i}', 'val', val_stats)
+        train_losses.append(train_loss)
         val_losses.append(val_loss)
         val_ious.append(val_iou)
         if args.report_to == "wandb":
@@ -264,10 +332,10 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
           log_stats.update({f'{id}_val_{k}': v for k, v in val_stats.items()})
           log_stats[f'{id}_epoch'] = i
           wandb.log(log_stats)
-
-        # if i > 0 and i % args.eps_save == 0:
-        #     mod_pthn = os.path.join(model_dir, f'model_ph{id}_{i}.pth')
-        #     torch.save(model.state_dict(), mod_pthn)
+          log_stats = {f'{id}_train/{k}': v for k, v in train_stats.items()}
+          log_stats.update({f'{id}_val/{k}': v for k, v in val_stats.items()})
+          log_stats[f'{id}_epoch'] = i
+          wandb.log(log_stats)
 
         if best_val_iou is not None and val_iou < iou_decay_fact * best_val_iou:
             print('iou decay threshold hit!', val_iou, best_val_loss, 'ep', i)
@@ -284,7 +352,7 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
     mod_pthn = os.path.join(model_dir, f'model_ph{id}.pth')
     txt_pth = os.path.join(model_dir, f'stats_ph{id}.txt')
     torch.save(best_model_state, mod_pthn)
-    model.load_state_dict(best_model_state) # !!!!!!!!!!!!!
+    model.load_state_dict(best_model_state)
     print('phase stats start, name, loss, iou best')
     print(mod_pthn, best_val_loss, best_val_iou)
     print('val_losses', val_losses)
@@ -304,6 +372,9 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
       wandb.log({f'{id}_test_SYNT_{k}': v for k, v in test_statsS.items()})
       wandb.log({f'{id}_test_DK_{k}': v for k, v in test_statsR.items()})
       wandb.log({f'{id}_test_GDA_{k}': v for k, v in test_statsG.items()})
+      wandb.log({f'{id}_test/SYNT/{k}': v for k, v in test_statsS.items()})
+      wandb.log({f'{id}_test/DK/{k}': v for k, v in test_statsR.items()})
+      wandb.log({f'{id}_test/GDA/{k}': v for k, v in test_statsG.items()})
 
     # txt results
     with open(txt_pth, 'w') as f:

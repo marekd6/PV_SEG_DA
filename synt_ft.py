@@ -42,24 +42,24 @@ sweep_config = {
             # "values": subs # S3
             "values": ['']
         },   
-        "batch_size1": {
+        "batch_size": {
             "values": [4, 8, 16, 32]
         },        
-        "warmup_epochs1": {
+        "warmup_epochs": {
             "values": [4, 2, 6]
         },
-        "wd1": {
+        "wd": {
             "values": [0.1, 0.01, 0.05]
         },
-        "lrenc1": {
+        "lrenc": {
             "values": [1e-6, 5e-6, 8e-6, 5e-5]
         },        
-        "lrdec1": {
+        "lrdec": {
             "values": [5e-6, 8e-5, 1e-5, 5e-4]
         },
 
         "lr_scheduler": {
-            "values": ['cosine', 'poly']
+            "values": ['cosine', 'polynomial']
         },    
         "loss": {
             "values": ["Dice+BCE", "Dice+Focal"]

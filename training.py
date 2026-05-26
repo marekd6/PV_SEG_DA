@@ -271,6 +271,8 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
             raw_ema_state = ema_model.state_dict()
             clean_state_dict = {}
             for key, value in raw_ema_state.items():
+                if key == "n_averaged":
+                    continue
                 clean_key = key.replace("module.", "", 1) if key.startswith("module.") else key
                 clean_state_dict[clean_key] = value
             best_model_state = clean_state_dict

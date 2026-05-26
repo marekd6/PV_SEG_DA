@@ -210,7 +210,7 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
     if '.csv' not in val_path:
         val_path = val_path + undsc + args.sub + '.csv'
         
-    train_data = data.SegmentationDataset(train_path, image_size=image_size, mask_size=mask_size, transform=processor, augmentation=args.augmentation, model_name=args.model_name, training_ratio=args.training_ratio)
+    train_data = data.SegmentationDataset(train_path, image_size=image_size, mask_size=mask_size, transform=processor, augmentation=args.augmentation, model_name=args.model_name)
     val_data = data.SegmentationDataset(val_path, image_size=image_size, mask_size=mask_size, transform=processor, model_name=args.model_name)
     test_data_0 = data.SegmentationDataset(test_paths[0], image_size=image_size, mask_size=mask_size, transform=processor, model_name=args.model_name)
     test_data_1 = data.SegmentationDataset(test_paths[1], image_size=image_size, mask_size=mask_size, transform=processor, model_name=args.model_name)
@@ -241,7 +241,8 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
         val_iou = val_stats_ema["iou"]
         val_loss = val_stats_ema["loss"]
 
-        print(f"Epoch: {i}, train loss: {train_loss:.4f}, base val_loss: {val_loss_base:.4f}, ema val_loss: {val_loss_ema:.4f}, ema val_IoU: {val_iou:.4f}")        print(f'ph_{id}', f'ep_{i}', 'train', train_stats)
+        print(f"Epoch: {i}, train loss: {train_loss:.4f}, base val_loss: {val_loss_base:.4f}, ema val_loss: {val_loss_ema:.4f}, ema val_IoU: {val_iou:.4f}")        
+        print(f'ph_{id}', f'ep_{i}', 'train', train_stats)
         print(f'ph_{id}', f'ep_{i}', 'val', val_stats_base)
         train_losses.append(train_loss)
         val_losses.append(val_loss)

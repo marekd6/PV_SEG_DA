@@ -4,7 +4,7 @@ adapted from SolarScope
 '''
 
 import os
-import cv2
+# import cv2
 import numpy as np
 import wandb
 import torch
@@ -13,8 +13,9 @@ from transformers import get_scheduler
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
+import argparse
 
-GPU_BS = 8
+GPU_BS = 16 # H100
 
 def get_criterion(args):
     criteria = {
@@ -90,11 +91,11 @@ def log_image_samples(writer, split, imgs, labels, predictions, image_size):
     cnt = min(len(imgs), 8)
     writer.log(
         {
-            f"examples/inputs/{split}": [
-                wandb.Image(cv2.resize(
-                    np.transpose(imgs[i].detach().cpu().numpy(), axes=(1, 2, 0)), (image_size, image_size),
-                ), caption=f"input {i}") for i in range(cnt)
-            ],
+            # f"examples/inputs/{split}": [
+            #     wandb.Image(cv2.resize(
+            #         np.transpose(imgs[i].detach().cpu().numpy(), axes=(1, 2, 0)), (image_size, image_size),
+            #     ), caption=f"input {i}") for i in range(cnt)
+            # ],
             f"examples/labels/{split}": [
                 wandb.Image(labels[i].view(image_size, image_size, 1).detach().cpu().numpy(), caption=f"target {i}") for i in range(cnt)
             ],
@@ -189,6 +190,7 @@ def eval_one_epoch(model, val_dl, criterion, epoch, writer, image_size, args, id
 
 def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
     # config - hyperparams
+    args = argparse.Namespace(**args)
     lrenc, lrdec, wd, batch_size, epochs, iou_decay_fact = args.lrenc, args.lrdec, args.wd, args.batch_size, args.epochs, args.iou_decay_fact
     start_epoch, eps_done, eps_best, curr_step = 0, epochs, 0, 0
     val_losses, val_ious, train_losses, best_val_loss, best_val_iou = [], [], [], None, None
@@ -248,11 +250,6 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
         val_losses.append(val_loss)
         val_ious.append(val_iou)
         if args.report_to == "wandb":
-            log_stats = {f'{id}_train_{k}': v for k, v in train_stats.items()}
-            log_stats.update({f'{id}_val_base_{k}': v for k, v in val_stats_base.items()})
-            log_stats.update({f'{id}_val_ema_{k}': v for k, v in val_stats_ema.items()})
-            log_stats[f'{id}_epoch'] = i
-            wandb.log(log_stats)
             log_stats = {f'{id}_train/{k}': v for k, v in train_stats.items()}
             log_stats.update({f'{id}_val_base/{k}': v for k, v in val_stats_base.items()})
             log_stats.update({f'{id}_val_ema/{k}': v for k, v in val_stats_ema.items()})
@@ -298,9 +295,6 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
     print(f"GDA-Epoch: {epochs}, test_loss: {test_lossG}" + ", test_dice: {}, test_IoU: {}".format(test_statsG["dice"], test_statsG["iou"]))
 
     if args.report_to == "wandb":
-      wandb.log({f'{id}_test_SYNT_{k}': v for k, v in test_statsS.items()})
-      wandb.log({f'{id}_test_DK_{k}': v for k, v in test_statsR.items()})
-      wandb.log({f'{id}_test_GDA_{k}': v for k, v in test_statsG.items()})
       wandb.log({f'{id}_test/SYNT/{k}': v for k, v in test_statsS.items()})
       wandb.log({f'{id}_test/DK/{k}': v for k, v in test_statsR.items()})
       wandb.log({f'{id}_test/GDA/{k}': v for k, v in test_statsG.items()})

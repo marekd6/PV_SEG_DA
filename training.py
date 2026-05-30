@@ -134,7 +134,8 @@ def train_one_epoch(model, ema_model, train_dl, scheduler, criterion, optimizer,
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
-            ema_model.update_parameters(model)
+            if (args.ema):
+                ema_model.update_parameters(model)
             if args.report_to == "wandb" and curr_step % 10 == 0:
                 wandb.log({f"{id}_lr/{group['name']}": group["lr"] for group in optimizer.param_groups}, step=curr_step)
             curr_step += 1
@@ -225,21 +226,27 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
     test_dl_2 = DataLoader(test_data_2, batch_size=batch_size, num_workers=args.workers, shuffle=False)
 
     scheduler = get_lr_scheduler(optimizer, args, len(train_dl))
-    ema_avg_fn = get_ema_multi_avg_fn()
-    ema_model = AveragedModel(model, multi_avg_fn=ema_avg_fn)
+    ema_model = model
+    if (args.ema):
+        ema_avg_fn = get_ema_multi_avg_fn()
+        ema_model = AveragedModel(model, multi_avg_fn=ema_avg_fn)
 
     # load model
     if mod_pth:
         resume_ckpt = torch.load(mod_pth)
         model.load_state_dict(resume_ckpt)
-        ema_model = AveragedModel(model, multi_avg_fn=ema_avg_fn)
+        ema_model = model
+        if (args.ema):
+            ema_model = AveragedModel(model, multi_avg_fn=ema_avg_fn)
         print('loaded ready model', mod_pth)
 
     # training for epochs
     for i in range(start_epoch, epochs):
         train_loss, train_stats, curr_step = train_one_epoch(model, ema_model, train_dl, scheduler, criterion, optimizer, args, id, curr_step)
         val_loss_base, val_stats_base = eval_one_epoch(model, val_dl, criterion, i, writer, image_size, args, f"{id}_base")
-        val_loss_ema, val_stats_ema = eval_one_epoch(ema_model, val_dl, criterion, i, writer, image_size, args, f"{id}_ema")
+        val_loss_ema, val_stats_ema = val_loss_base, val_stats_base
+        if (args.ema):
+            val_loss_ema, val_stats_ema = eval_one_epoch(ema_model, val_dl, criterion, i, writer, image_size, args, f"{id}_ema")
         val_iou = val_stats_ema["iou"]
         val_loss = val_stats_ema["loss"]
 
@@ -265,13 +272,15 @@ def train_model(train_path, val_path, test_paths, writer, mod_pth, id, args):
             eps_best = i
             best_val_loss = val_loss
             best_val_iou = val_iou
-            raw_ema_state = ema_model.state_dict()
-            clean_state_dict = {}
-            for key, value in raw_ema_state.items():
-                if key == "n_averaged":
-                    continue
-                clean_key = key.replace("module.", "", 1) if key.startswith("module.") else key
-                clean_state_dict[clean_key] = value
+            clean_state_dict = model.state_dict()
+            if (args.ema):
+                raw_ema_state = ema_model.state_dict()
+                clean_state_dict = {}
+                for key, value in raw_ema_state.items():
+                    if key == "n_averaged":
+                        continue
+                    clean_key = key.replace("module.", "", 1) if key.startswith("module.") else key
+                    clean_state_dict[clean_key] = value
             best_model_state = clean_state_dict
 
     # save tr-val results and the best model

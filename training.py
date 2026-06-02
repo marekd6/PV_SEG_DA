@@ -5,7 +5,7 @@ adapted from SolarScope
 
 import os
 # import cv2
-import numpy as np
+# import numpy as np
 import wandb
 import torch
 import data, models, losses, metrics # type: ignore
@@ -16,6 +16,7 @@ from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 import argparse
 
 GPU_BS = 16 # H100
+GPU_BS = 8 # A100-80GB
 
 def get_criterion(args):
     criteria = {
@@ -71,7 +72,7 @@ def get_lr_scheduler(optimiser, args, train_dl_len):
         
     optimize_steps_per_epoch = train_dl_len // acc_steps
     total_optimize_steps = optimize_steps_per_epoch * args.epochs
-    warmup_steps = optimize_steps_per_epoch * args.warmup_epochs
+    warmup_steps = optimize_steps_per_epoch * min(args.warmup_epochs, args.epochs-1) # config's warmup may no longer reflect reality!
     
     kwargs = {}
     if args.lr_scheduler == "polynomial":

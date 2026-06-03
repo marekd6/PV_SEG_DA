@@ -22,3 +22,6 @@ save_dir = "/users/project1/pt01299/synt/fts2"
 epochs = 16
 iou_decay_fact = 0.7
 lr_layer_decay = 0.85
+
+mod_ph1 = ''
+ema = True

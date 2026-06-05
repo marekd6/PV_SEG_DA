@@ -24,9 +24,9 @@ INPUT_PANEL_DIR = "./extracted_panels"            # Folder containing extracted 
 OUTPUT_DIR = "dataset_synthetic_rebuilt"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-PL0_IDENTIFIER = "PL0"
+PL0_IDENTIFIER = "mix"
 GRID_SHIFT_PROBABILITY = 0.25
-MAX_GRID_RETRIES = 10
+MAX_GRID_RETRIES = 100
 
 # ==============================================================================
 # --- CORE IMAGE MATH & PROCESSING ---
@@ -36,12 +36,9 @@ def overlaps(c1, c2):
     return abs(c1[0] - c2[0]) < 2 and abs(c1[1] - c2[1]) < 2
 
 def generate_random_grid(num_cells):
-    """Generates a randomized grid structure with staggered shift probability."""
     if num_cells <= 1: return [(0, 0)]
     cells = [(0, 0)]
-    
-    allow_shifts = random.random() < GRID_SHIFT_PROBABILITY
-    if allow_shifts:
+    if random.random() < GRID_SHIFT_PROBABILITY:
         valid_moves = [
             (0, -2), (-1, -2), (1, -2), (0, 2), (-1, 2), (1, 2),    
             (-2, 0), (-2, -1), (-2, 1), (2, 0), (2, -1), (2, 1)    
@@ -51,21 +48,17 @@ def generate_random_grid(num_cells):
         
     adj = set(valid_moves)
     for _ in range(num_cells - 1):
-        valid_adj = [move for move in adj if not any(overlaps(move, c) for c in cells)]
+        valid_adj = [m for m in adj if not any(overlaps(m, c) for c in cells)]
         if not valid_adj: break
-        
         new_cell = random.choice(valid_adj)
         cells.append(new_cell)
         if new_cell in adj: adj.remove(new_cell)
-        
         for dx, dy in valid_moves:
             neighbor = (new_cell[0] + dx, new_cell[1] + dy)
-            if not any(overlaps(neighbor, c) for c in cells):
-                adj.add(neighbor)
+            if not any(overlaps(neighbor, c) for c in cells): adj.add(neighbor)
     return cells
 
 def generate_compact_grid(num_cells):
-    """Fallback: Generates a tightly packed 2-column grid layout."""
     if num_cells <= 1: return [(0, 0)]
     return [((i % 2) * 2, (i // 2) * 2) for i in range(num_cells)]
 
@@ -109,16 +102,52 @@ def transform_polygon(polygon, cx, cy, rot_deg, stretch_x, stretch_y):
         transformed.append((cx + rx, cy + ry))
     return transformed
 
-def check_grid_fit(grid_shape, cell_w, cell_h, cx, cy, rot, sx, sy, orig_w, orig_h):
-    """Calculates if the transformed grid polygon fits inside the original label boundaries."""
-    base_poly = get_grid_polygon(grid_shape, cell_w, cell_h)
-    trans_poly = transform_polygon(base_poly, cx, cy, rot, sx, sy)
-    
-    gw = max(x for x, y in trans_poly) - min(x for x, y in trans_poly)
-    gh = max(y for x, y in trans_poly) - min(y for x, y in trans_poly)
-    
-    # 10% tolerance for floating point expansion and minor layout shifts
-    return gw <= orig_w * 1.10 and gh <= orig_h * 1.10
+def rotate_point(x, y, cx, cy, angle_rad):
+    tx, ty = x - cx, y - cy
+    rx = tx * math.cos(angle_rad) - ty * math.sin(angle_rad)
+    ry = tx * math.sin(angle_rad) + ty * math.cos(angle_rad)
+    return rx + cx, ry + cy
+
+# ==============================================================================
+# --- THE GEOMETRY MATCHER ---
+# ==============================================================================
+
+def recover_best_grid_shape(grid_cells, cell_w, cell_h, rot, sx, sy, target_w, target_h):
+    """
+    Generate and Test: Creates random grids and scores them based on how 
+    closely their transformed bounding box matches the original YOLO bounding box.
+    """
+    if target_w == 0 or target_h == 0:
+        return generate_compact_grid(grid_cells)
+
+    best_grid = None
+    best_error = float('inf')
+
+    for _ in range(MAX_GRID_RETRIES):
+        candidate = generate_random_grid(grid_cells)
+        base_poly = get_grid_polygon(candidate, cell_w, cell_h)
+        
+        # Test transform at 0,0 to easily measure pure width and height
+        trans_poly = transform_polygon(base_poly, 0, 0, rot, sx, sy)
+        cand_w = max(x for x, y in trans_poly) - min(x for x, y in trans_poly)
+        cand_h = max(y for x, y in trans_poly) - min(y for x, y in trans_poly)
+        
+        # Calculate proportional error
+        error = abs(cand_w - target_w) / target_w + abs(cand_h - target_h) / target_h
+        
+        if error < best_error:
+            best_error = error
+            best_grid = candidate
+            
+        # If it fits within a 5% margin of error, we consider it a perfect match
+        if error < 0.05:
+            break
+            
+    return best_grid if best_grid else generate_compact_grid(grid_cells)
+
+# ==============================================================================
+# --- IMAGE COMPOSITING ---
+# ==============================================================================
 
 def create_grid_composite_multi(panel_imgs, grid_shape):
     w, h = panel_imgs[0].size
@@ -166,8 +195,7 @@ def apply_photometry(img, bright, noise, blur_radius):
     return res
 
 def create_shadow(img, blur_radius, opacity):
-    if opacity <= 0 or blur_radius <= 0:
-        return Image.new("RGBA", img.size, (0,0,0,0)), 0
+    if opacity <= 0 or blur_radius <= 0: return Image.new("RGBA", img.size, (0,0,0,0)), 0
     pad = int(math.ceil(blur_radius)) * 2 + 2
     shadow = Image.new("RGBA", (img.width + pad * 2, img.height + pad * 2), (0, 0, 0, 0))
     black = Image.new("RGBA", img.size, (0, 0, 0, 255))
@@ -175,12 +203,13 @@ def create_shadow(img, blur_radius, opacity):
     shadow.paste(black, (pad, pad))
     return shadow.filter(ImageFilter.GaussianBlur(radius=blur_radius)), pad
 
-def normalize_polygon(polygon, img_w, img_h):
-    return [(max(0, min(img_w, x)) / img_w, max(0, min(img_h, y)) / img_h) for x, y in polygon]
-
 def extract_base_bg_name(label_filename):
     name = label_filename
-    for suffix in ["_mix_aug", "_mix", "_comp_aug", "_comp", "_pnl0_aug", "_pnl0", "_aug"]:
+    pv_suf = [f'_pnl{p_idx}' for p_idx in range(11)]
+    pv_suf_a = [f'_pnl{p_idx}_aug' for p_idx in range(11)]
+    pv_suf.extend(pv_suf_a)
+    pv_suf.extend(["_mix_aug", "_mix", "_composite_aug", "_composite"])
+    for suffix in pv_suf:
         if name.endswith(suffix): return name[:-len(suffix)]
     return name
 
@@ -202,26 +231,36 @@ def rebuild_dataset():
     lbl_files = glob.glob(os.path.join(INPUT_LBL_DIR, "*.txt"))
     print(f"Found {len(lbl_files)} labels. Rebuilding dataset...\n")
 
-    for lbl_path in lbl_files:
+    for lbl_path in [lbl_files[0]]:
+        print(lbl_path)
         base_label_name = os.path.splitext(os.path.basename(lbl_path))[0]
-        name_lower = base_label_name.lower()
+        name_lower = base_label_name # base_label_name.lower()
+        print('name_lower', name_lower)
         
+        # 1. Determine Context
         if "mix" in name_lower: variant_type = "mix"
         elif "comp" in name_lower: variant_type = "comp"
         elif "pnl0" in name_lower: variant_type = "pnl0"
         elif "empty" in name_lower:
             shutil.copy2(lbl_path, os.path.join(OUTPUT_DIR, f"{base_label_name}.txt"))
+            with open(os.path.join(OUTPUT_DIR, f"{base_label_name}.json"), "w") as f:
+                json.dump({"global_augmentations": {}, "panels": []}, f, indent=4)
             continue
         else: continue
 
+        # 2. Resolve Background
         bg_name = extract_base_bg_name(base_label_name)
+        print('bg_name', bg_name)
         bg_path_jpg = os.path.join(INPUT_BG_DIR, f"{bg_name}.jpg")
         bg_path_png = os.path.join(INPUT_BG_DIR, f"{bg_name}.png")
+        bg_path_tif = os.path.join(INPUT_BG_DIR, f"{bg_name}.tif")
         
         if os.path.exists(bg_path_jpg): bg_img = Image.open(bg_path_jpg).convert("RGBA")
         elif os.path.exists(bg_path_png): bg_img = Image.open(bg_path_png).convert("RGBA")
+        elif os.path.exists(bg_path_tif): bg_img = Image.open(bg_path_tif).convert("RGBA")
         else: continue
 
+        # 3. Load Blueprint Metadata
         json_path = os.path.join(INPUT_META_DIR, f"{base_label_name}.json")
         if not os.path.exists(json_path): continue
         with open(json_path, 'r') as f: meta = json.load(f)
@@ -229,21 +268,29 @@ def rebuild_dataset():
         p_data_list = meta.get('panels', [])
         g_meta = meta.get('global_augmentations', {})
 
-        # Extract Polygon Centers AND Original Dimensions
+        # 4. Extract Polygon Data from Label File
         placements_data = []
         with open(lbl_path, 'r') as f:
             for line in f:
                 parts = list(map(float, line.strip().split()))
                 if len(parts) > 1:
+                    cls_id = int(parts[0])
                     xs, ys = parts[1::2], parts[2::2]
                     cx_norm, cy_norm = sum(xs)/len(xs), sum(ys)/len(ys)
                     w_norm, h_norm = max(xs) - min(xs), max(ys) - min(ys)
-                    placements_data.append((cx_norm, cy_norm, w_norm, h_norm))
+                    placements_data.append((cls_id, cx_norm, cy_norm, w_norm, h_norm))
 
         out_img = bg_img.copy()
+        
+        new_meta = {
+            "global_augmentations": g_meta,
+            "panels": []
+        }
+        
+        placement_polygons_pixels = []
 
-        # Process Each Placement
-        for i, (cx_norm, cy_norm, w_norm, h_norm) in enumerate(placements_data):
+        # 5. Process Each Placement
+        for i, (cls_id, cx_norm, cy_norm, w_norm, h_norm) in enumerate(placements_data):
             cx, cy = cx_norm * bg_img.width, cy_norm * bg_img.height
             orig_w, orig_h = w_norm * bg_img.width, h_norm * bg_img.height
             p_meta = p_data_list[i % len(p_data_list)]
@@ -254,41 +301,39 @@ def rebuild_dataset():
             sx = p_meta.get('stretch_x', 1.0)
             sy = p_meta.get('stretch_y', 1.0)
 
-            # Determine the baseline cell dimensions using one random panel
+            # Determine baseline cell dimensions
             _, test_panel = random.choice(all_panels)
             _, cell_w, cell_h = scale_panel(test_panel, locked_size)
 
-            # --- DYNAMIC GRID GENERATION & VALIDATION ---
-            best_grid_shape = None
-            for _ in range(MAX_GRID_RETRIES):
-                candidate_grid = generate_random_grid(grid_cells)
-                if check_grid_fit(candidate_grid, cell_w, cell_h, cx, cy, rot, sx, sy, orig_w, orig_h):
-                    best_grid_shape = candidate_grid
-                    break
-                    
-            if not best_grid_shape:
-                best_grid_shape = generate_compact_grid(grid_cells)
+            # --- RUN GENERATE & TEST MATCHER ---
+            best_grid_shape = recover_best_grid_shape(grid_cells, cell_w, cell_h, rot, sx, sy, orig_w, orig_h)
 
-            # --- POPULATE THE GRID ---
+            # --- POPULATE PANELS ---
             panel_list = []
+            source_panels = []
+            
             if variant_type == "mix":
-                _, rand_panel = random.choice(all_panels)
+                p_path, rand_panel = random.choice(all_panels)
                 scaled_panel, _, _ = scale_panel(rand_panel, locked_size)
                 panel_list = [scaled_panel] * len(best_grid_shape)
+                source_panels = [os.path.basename(p_path)] * len(best_grid_shape)
                 
             elif variant_type == "comp":
                 cw, ch = 0, 0
                 for _ in best_grid_shape:
-                    _, rand_cell_panel = random.choice(all_panels)
+                    p_path, rand_cell_panel = random.choice(all_panels)
                     scaled_cell, temp_w, temp_h = scale_panel(rand_cell_panel, locked_size)
                     if cw == 0: cw, ch = temp_w, temp_h
                     panel_list.append(scaled_cell.resize((cw, ch), Image.Resampling.LANCZOS))
+                    source_panels.append(os.path.basename(p_path))
                     
             elif variant_type == "pnl0":
+                p_path = pl0_panel_data[0]
                 scaled_pl0, _, _ = scale_panel(pl0_panel_data[1], locked_size)
                 panel_list = [scaled_pl0] * len(best_grid_shape)
+                source_panels = [os.path.basename(p_path)] * len(best_grid_shape)
 
-            # Render logic
+            # --- RENDER COMPOSITE ---
             comp = create_grid_composite_multi(panel_list, best_grid_shape)
             img_geom = apply_geometry(comp, rot, sx, sy)
             img_rot = apply_photometry(img_geom, p_meta.get('brightness_match_multiplier', 1.0), p_meta.get('noise_intensity', 0), p_meta.get('blur_radius', 0))
@@ -304,20 +349,53 @@ def rebuild_dataset():
             out_img.paste(shadow_img, (int(shadow_px), int(shadow_py)), mask=shadow_img)
             out_img.paste(img_rot, (px, py), mask=img_rot)
 
-        # Apply Global Augmentations
+            # --- STORE EXACT POLYGON & METADATA ---
+            base_poly = get_grid_polygon(best_grid_shape, cell_w, cell_h)
+            trans_poly = transform_polygon(base_poly, cx, cy, rot, sx, sy)
+            placement_polygons_pixels.append((cls_id, trans_poly))
+            
+            updated_p_meta = p_meta.copy()
+            updated_p_meta["grid_shape"] = best_grid_shape
+            updated_p_meta["source_panels"] = source_panels
+            new_meta["panels"].append(updated_p_meta)
+
+        # 6. Apply Global Augmentations
+        global_rot = g_meta.get('rotation_deg', 0)
         if 'noise' in g_meta and g_meta['noise'] > 0:
             out_img = apply_noise_np(out_img, g_meta['noise'])
             
-        if 'rotation_deg' in g_meta and g_meta['rotation_deg'] != 0:
-            out_img = out_img.rotate(g_meta['rotation_deg'], resample=Image.BICUBIC, expand=False)
+        if global_rot != 0:
+            out_img = out_img.rotate(global_rot, resample=Image.BICUBIC, expand=False)
 
-        # Save Image & Copy original Label
+        # 7. Compute Final Rotated Labels
+        final_labels = []
+        cx_img, cy_img = out_img.width / 2, out_img.height / 2
+        global_rot_rad = math.radians(-global_rot)
+
+        for c_id, poly in placement_polygons_pixels:
+            new_poly = []
+            for point_x, point_y in poly:
+                rx, ry = rotate_point(point_x, point_y, cx_img, cy_img, global_rot_rad) if global_rot != 0 else (point_x, point_y)
+                nx = max(0, min(out_img.width, rx)) / out_img.width
+                ny = max(0, min(out_img.height, ry)) / out_img.height
+                new_poly.append((nx, ny))
+            final_labels.append((c_id, new_poly))
+
+        # 8. Save Everything
         out_img.convert("RGB").save(os.path.join(OUTPUT_DIR, f"{base_label_name}.jpg"), quality=95)
-        shutil.copy2(lbl_path, os.path.join(OUTPUT_DIR, f"{base_label_name}.txt"))
+        
+        with open(os.path.join(OUTPUT_DIR, f"{base_label_name}.txt"), "w") as f:
+            for c_id, pts in final_labels:
+                coords = " ".join([f"{p[0]:.6f} {p[1]:.6f}" for p in pts])
+                f.write(f"{c_id} {coords}\n")
+                
+        with open(os.path.join(OUTPUT_DIR, f"{base_label_name}.json"), "w") as f:
+            json.dump(new_meta, f, indent=4)
         
         print(f"Reconstructed [{variant_type.upper()}]: {base_label_name}.jpg")
 
-    print("\nDataset generation completed successfully.")
+    print("\nDataset generation, labels, and metadata export completed successfully.")
 
 if __name__ == "__main__":
     rebuild_dataset()
+    

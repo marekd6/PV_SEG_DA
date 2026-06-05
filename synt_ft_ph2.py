@@ -8,6 +8,8 @@ import training
 import params_synt as args # type: ignore
 import types
 from torch import cuda
+from os.path import join
+from random import random
 
 
 # data paths
@@ -48,12 +50,17 @@ def trainmix():
         print(k, '=', v)
     
     base_settings.update(dict(wandb.config))
+    mod_pt = join(config.save_dir, config.mod_ph1, 'model_ph1.pth')
 
-    training.train_model(train_m, config.val, [test_s, test_r, test_gda], writer, config.mod_ph1, 2, base_settings)
+    training.train_model(train_m, config.val, [test_s, test_r, test_gda], writer, mod_pt, 2, base_settings)
 
     cuda.empty_cache() # magic
 
 
 if __name__ == "__main__":
-    wandb.agent("marekd6-politechnika-gda-ska/", function=trainmix, count=123)
-
+    if random() > 0.6:
+        for _ in range(33):
+            wandb.agent("marekd6-politechnika-gda-ska//", function=trainmix, count=2)
+    else:
+        for _ in range(33):
+            wandb.agent("marekd6-politechnika-gda-ska//", function=trainmix, count=3)

@@ -16,7 +16,7 @@ from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 import argparse
 
 GPU_BS = 16 # H100
-GPU_BS = 8 # A100-80GB
+# GPU_BS = 8 # A100-80GB
 
 def get_criterion(args):
     criteria = {

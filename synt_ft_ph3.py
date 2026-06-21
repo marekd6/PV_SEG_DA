@@ -1,6 +1,6 @@
 '''
 entry point to define and run tuning scenarios
-stage 2: M/SYNT or GDA
+stage 3: DK/DK or GDA
 '''
 
 import wandb
@@ -50,9 +50,9 @@ def trainmix():
         print(k, '=', v)
     
     base_settings.update(dict(wandb.config))
-    mod_pt = join(config.save_dir, config.mod_ph1, 'model_ph1.pth')
+    mod_pt = join(config.save_dir, config.mod_ph2, 'model_ph2.pth')
 
-    training.train_model(train_m, config.val, [test_s, test_r, test_gda], writer, mod_pt, 2, base_settings)
+    training.train_model(train_r, config.val, [test_s, test_r, test_gda], writer, mod_pt, 3, base_settings)
 
     cuda.empty_cache() # magic
 
@@ -60,7 +60,12 @@ def trainmix():
 if __name__ == "__main__":
     if random() > 0.6:
         for _ in range(33):
-            wandb.agent("marekd6-politechnika-gda-ska//", function=trainmix, count=2)
+            wandb.agent("marekd6-polite", function=trainmix, count=2)
+            wandb.agent("marekd6-politechni", function=trainmix, count=2)
+            wandb.agent("marekd6-politechni", function=trainmix, count=2)
+
     else:
         for _ in range(33):
-            wandb.agent("marekd6-politechnika-gda-ska//", function=trainmix, count=3)
+            wandb.agent("marekd6-politechni", function=trainmix, count=2)
+            wandb.agent("marekd6-politomg", function=trainmix, count=2)
+            wandb.agent("marekd6-politechnik", function=trainmix, count=2)

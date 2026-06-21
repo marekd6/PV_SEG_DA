@@ -52,7 +52,7 @@ def trainmix():
     base_settings.update(dict(wandb.config))
     mod_pt = join(config.save_dir, config.mod_ph2, 'model_ph2.pth')
 
-    training.train_model(train_r, config.val, [test_s, test_r, test_gda], writer, mod_pt, 2, base_settings)
+    training.train_model(train_r, config.val, [test_s, test_r, test_gda], writer, mod_pt, 3, base_settings)
 
     cuda.empty_cache() # magic
 

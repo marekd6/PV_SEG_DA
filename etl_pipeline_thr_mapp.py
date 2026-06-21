@@ -1,16 +1,11 @@
 """
-ETL and Analysis Pipeline with Threshold Filtering and Value Mapping
+ETL and Analysis Pipeline with violin plots, categorical x handling, fixed y-range,
+per-source/group plot folders, and 'all' grouping.
 
-Features added:
-- Threshold filtering: keep rows where a column meets a threshold condition.
-- Value mapping: map values of a column to new values via dicts or mapping CSV files.
-
-Other features:
-- Read CSVs from input folder, clean, optional per-file limiting, filter by allowed values,
-  split by one or more columns, per-group limiting, univariate and bivariate analysis,
-  save trimmed groups, stats, correlations, plots, and a merged summary CSV.
-
-Configuration block below controls behavior.
+Requirements:
+- pandas, numpy, matplotlib, seaborn installed
+- Place CSV files in INPUT_FOLDER
+- Configure options in the CONFIGURATION block below
 """
 
 import os
@@ -24,7 +19,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # ---------------------------
-# Configuration
+# CONFIGURATION
 # ---------------------------
 
 # Folders
@@ -99,12 +94,18 @@ UNIVARIATE_STATS = ["count", "mean", "std", "min", "25%", "50%", "75%", "max"]
 PLOT_DPI = 150
 PLOT_FIGSIZE = (6, 4)
 
+# Treat x as categorical if number of unique values <= this threshold
+CATEGORICAL_UNIQUE_THRESHOLD = 5
+
+# Force same y-axis range for all plots: set to (ymin, ymax) or None for auto
+Y_AXIS_RANGE: Optional[Tuple[float, float]] = None  # e.g., (0, 100)
+
 # Misc
 VERBOSE = True
 
 
 # ---------------------------
-# Utilities
+# UTILITIES
 # ---------------------------
 
 def log(msg: str):
@@ -137,7 +138,7 @@ def find_first_existing_column(df: pd.DataFrame, possible_columns: List[str]) ->
 
 
 # ---------------------------
-# Mapping utilities
+# MAPPING UTILITIES
 # ---------------------------
 
 def load_mapping_file_for_column(column: str) -> Dict[str, str]:
@@ -195,7 +196,6 @@ def build_value_mappings() -> Dict[str, Dict[str, str]]:
     for col, mapping in VALUE_MAPPINGS_INLINE.items():
         if mapping:
             combined[col] = {str(k): str(v) for k, v in mapping.items()}
-
     return combined
 
 
@@ -217,7 +217,7 @@ def apply_value_mappings(df: pd.DataFrame, mappings: Dict[str, Dict[str, str]]) 
 
 
 # ---------------------------
-# Threshold filtering
+# THRESHOLD FILTERS
 # ---------------------------
 
 def _apply_single_threshold(df: pd.DataFrame, column: str, operator: str, value: Any) -> pd.DataFrame:
@@ -238,7 +238,6 @@ def _apply_single_threshold(df: pd.DataFrame, column: str, operator: str, value:
         numeric_value = float(value)
     except Exception:
         numeric_value = None
-
     if numeric_value is not None:
         # Coerce series to numeric
         s_num = pd.to_numeric(series, errors="coerce")
@@ -271,7 +270,6 @@ def _apply_single_threshold(df: pd.DataFrame, column: str, operator: str, value:
         else:
             log(f"Operator '{operator}' not supported for non-numeric threshold on column '{column}'. Skipping.")
             return df
-
     before = len(df)
     df_filtered = df[mask].reset_index(drop=True)
     after = len(df_filtered)
@@ -296,7 +294,7 @@ def apply_threshold_filters(df: pd.DataFrame, thresholds: List[Tuple[str, str, A
 
 
 # ---------------------------
-# Existing cleaning, splitting, analysis functions
+# CLEANING, SPLITTING, ANALYSIS (modified to include 'all' group)
 # ---------------------------
 
 def remove_selected_columns(df: pd.DataFrame, cols_to_remove: List[str]) -> pd.DataFrame:
@@ -334,14 +332,18 @@ def sort_and_limit_rows(df: pd.DataFrame, fraction: float, possible_sort_cols: L
     return df_sorted.iloc[:limit].reset_index(drop=True)
 
 
-def split_dataframe(df: pd.DataFrame, group_cols: List[str]) -> Dict[str, pd.DataFrame]:
+def split_dataframe_with_all(df: pd.DataFrame, group_cols: List[str]) -> Dict[str, pd.DataFrame]:
+    """
+    Split df into groups by group_cols and always include an 'all' group.
+    Returns dict mapping group_key -> group_df. 'all' key contains the whole df.
+    """
+    groups = {"all": df.copy().reset_index(drop=True)}
     if not group_cols:
-        return {"all": df.copy().reset_index(drop=True)}
+        return groups
     existing_group_cols = [c for c in group_cols if c in df.columns]
     if not existing_group_cols:
-        log("No group columns found in file; treating entire file as single group.")
-        return {"all": df.copy().reset_index(drop=True)}
-    groups = {}
+        log("No group columns found in file; only 'all' group will be used.")
+        return groups
     grouped = df.groupby(existing_group_cols, dropna=False)
     for group_values, group_df in grouped:
         if isinstance(group_values, tuple):
@@ -351,7 +353,7 @@ def split_dataframe(df: pd.DataFrame, group_cols: List[str]) -> Dict[str, pd.Dat
         key = "__".join(f"{col}={row[col]}" for col in existing_group_cols)
         key = sanitize_for_filename(key)
         groups[key] = group_df.reset_index(drop=True)
-    log(f"Split into {len(groups)} groups using columns: {existing_group_cols}")
+    log(f"Split into {len(groups)-1} specific groups (+ 'all') using columns: {existing_group_cols}")
     return groups
 
 
@@ -406,13 +408,80 @@ def save_correlations(corrs: pd.Series, out_path: str):
     df.to_csv(out_path, index=False)
 
 
-def plot_scatter_with_regression(df: pd.DataFrame, x_col: str, y_col: str, out_path: str):
+# ---------------------------
+# PLOTTING: scatter/regression + violin for categorical x
+# ---------------------------
+
+def is_categorical_for_plot(series: pd.Series, threshold: int = CATEGORICAL_UNIQUE_THRESHOLD) -> bool:
+    """
+    Decide whether to treat a variable as categorical for plotting.
+    - Non-numeric types are categorical.
+    - Numeric with few unique values (<= threshold) is categorical.
+    """
+    if not pd.api.types.is_numeric_dtype(series):
+        return True
+    try:
+        nunique = series.nunique(dropna=True)
+        if nunique <= threshold:
+            return True
+    except Exception:
+        return False
+    return False
+
+
+def ensure_plot_subfolder(source_base: str, group_key: str) -> str:
+    """
+    Create and return a subfolder path for plots for a given source file and group.
+    Structure: PLOTS_FOLDER/<source_base>/<group_key>/
+    """
+    folder = os.path.join(PLOTS_FOLDER, sanitize_for_filename(source_base), sanitize_for_filename(group_key))
+    os.makedirs(folder, exist_ok=True)
+    return folder
+
+
+def plot_violin_and_strip(df: pd.DataFrame, x_col: str, y_col: str, out_path: str, y_range: Optional[Tuple[float, float]] = Y_AXIS_RANGE):
+    """
+    Create a violin plot (x categorical, y numeric) with an overlaid stripplot.
+    """
+    # Prepare data
+    x = df[x_col].astype(object)
+    y = pd.to_numeric(df[y_col], errors="coerce")
+    plot_df = pd.concat([x, y], axis=1).dropna()
+    if plot_df.shape[0] < 2:
+        log(f"Not enough data to plot violin for {y_col} vs {x_col}. Skipping.")
+        return
+
+    plt.figure(figsize=PLOT_FIGSIZE)
+    sns.set(style="whitegrid")
+    try:
+        sns.violinplot(x=x_col, y=y_col, data=plot_df, inner=None, color="lightgray")
+        sns.stripplot(x=x_col, y=y_col, data=plot_df, color="black", size=3, jitter=True)
+    except Exception:
+        # fallback: boxplot + strip
+        sns.boxplot(x=x_col, y=y_col, data=plot_df, color="lightgray")
+        sns.stripplot(x=x_col, y=y_col, data=plot_df, color="black", size=3, jitter=True)
+
+    plt.xlabel(x_col)
+    plt.ylabel(y_col)
+    plt.title(f"{y_col} by {x_col}")
+    if y_range is not None:
+        plt.ylim(y_range)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=PLOT_DPI)
+    plt.close()
+
+
+def plot_scatter_with_regression_and_fixed_y(df: pd.DataFrame, x_col: str, y_col: str, out_path: str, y_range: Optional[Tuple[float, float]] = Y_AXIS_RANGE):
+    """
+    Scatter plot with regression line for numeric x and numeric y.
+    """
     x = pd.to_numeric(df[x_col], errors="coerce")
     y = pd.to_numeric(df[y_col], errors="coerce")
     plot_df = pd.concat([x, y], axis=1).dropna()
     if plot_df.shape[0] < 2:
         log(f"Not enough numeric data to plot {y_col} vs {x_col}. Skipping plot.")
         return
+
     plt.figure(figsize=PLOT_FIGSIZE)
     sns.set(style="whitegrid")
     try:
@@ -422,13 +491,15 @@ def plot_scatter_with_regression(df: pd.DataFrame, x_col: str, y_col: str, out_p
     plt.xlabel(x_col)
     plt.ylabel(y_col)
     plt.title(f"{y_col} vs {x_col}")
+    if y_range is not None:
+        plt.ylim(y_range)
     plt.tight_layout()
     plt.savefig(out_path, dpi=PLOT_DPI)
     plt.close()
 
 
 # ---------------------------
-# Main processing per file
+# MAIN PROCESSING PER FILE (integrates new plotting behavior)
 # ---------------------------
 
 def load_allowed_values(path: str) -> Optional[set]:
@@ -452,7 +523,7 @@ def process_single_file(filepath: str, allowed_values: Optional[set], mappings: 
         log(f"Failed to read {filename}: {e}")
         return
 
-    # Apply value mappings early so subsequent steps use mapped values
+    # Apply value mappings early
     if mappings:
         df = apply_value_mappings(df, mappings)
 
@@ -479,14 +550,14 @@ def process_single_file(filepath: str, allowed_values: Optional[set], mappings: 
             log("No rows left after threshold filtering; skipping file.")
             return
 
-    # Split into groups
-    groups = split_dataframe(df, SPLIT_COLUMNS)
+    # Split into groups and always include 'all'
+    groups = split_dataframe_with_all(df, SPLIT_COLUMNS)
 
     # Process each group
     for group_key, group_df in groups.items():
         log(f"\nProcessing group: {group_key} (rows: {len(group_df)})")
 
-        # Per-group limiting (sorted by possible group sort columns)
+        # Per-group limiting
         if 0 < GROUP_LIMIT_FRACTION < 1:
             group_df = sort_and_limit_rows(group_df, GROUP_LIMIT_FRACTION, POSSIBLE_GROUP_SORT_COLUMNS)
             log(f"After group limiting: {len(group_df)} rows")
@@ -498,6 +569,9 @@ def process_single_file(filepath: str, allowed_values: Optional[set], mappings: 
             log(f"Saved trimmed group CSV: {out_group_csv}")
         except Exception as e:
             log(f"Failed to save group CSV {out_group_csv}: {e}")
+
+        # Prepare plot subfolder for this source and group
+        plot_subfolder = ensure_plot_subfolder(base_name, group_key)
 
         # For each target variable, perform analysis if present
         for target in TARGET_VARIABLES:
@@ -519,22 +593,32 @@ def process_single_file(filepath: str, allowed_values: Optional[set], mappings: 
             save_correlations(corrs, corr_path)
             log(f"Saved correlations: {corr_path}")
 
-            # Plots: for each other numeric column, create scatter + regression
-            # Include numeric columns and those coercible to numeric
+            # Plotting: iterate over other columns and decide plot type
             for col in group_df.columns:
                 if col == target:
                     continue
-                # Check if column has at least two numeric values after coercion
-                coerced = pd.to_numeric(group_df[col], errors="coerce")
-                coerced_target = pd.to_numeric(group_df[target], errors="coerce")
-                plot_df = pd.concat([coerced, coerced_target], axis=1).dropna()
-                if plot_df.shape[0] < 2:
-                    continue
-                plot_name = f"{base_name}__{group_key}__{sanitize_for_filename(target)}_vs_{sanitize_for_filename(col)}.png"
-                plot_path = os.path.join(PLOTS_FOLDER, plot_name)
+
+                # Determine if x should be treated as categorical
+                treat_as_cat = is_categorical_for_plot(group_df[col], threshold=CATEGORICAL_UNIQUE_THRESHOLD)
+
+                # Build plot filename and path
+                plot_name = f"{base_name}__{group_key}__{sanitize_for_filename(target)}_vs_{sanitize_for_filename(col)}"
+                if treat_as_cat:
+                    plot_name += "__violin.png"
+                else:
+                    plot_name += "__scatter.png"
+                plot_path = os.path.join(plot_subfolder, plot_name)
+
+                # Create plot depending on type
                 try:
-                    plot_scatter_with_regression(group_df, col, target, plot_path)
-                    log(f"Saved plot: {plot_path}")
+                    if treat_as_cat:
+                        # Violin + strip (y numeric, x categorical)
+                        plot_violin_and_strip(group_df, col, target, plot_path, y_range=Y_AXIS_RANGE)
+                        log(f"Saved violin plot: {plot_path}")
+                    else:
+                        # Scatter + regression (both numeric)
+                        plot_scatter_with_regression_and_fixed_y(group_df, col, target, plot_path, y_range=Y_AXIS_RANGE)
+                        log(f"Saved scatter/regression plot: {plot_path}")
                 except Exception as e:
                     log(f"Failed to create plot {plot_path}: {e}")
 
@@ -560,6 +644,20 @@ def process_single_file(filepath: str, allowed_values: Optional[set], mappings: 
             merged_row["top_correlation_value"] = top_corr_val
 
             merged_rows.append(merged_row)
+
+
+# ---------------------------
+# RUN PIPELINE
+# ---------------------------
+
+def load_allowed_values(path: str) -> Optional[set]:
+    if not path or not os.path.isfile(path):
+        log(f"Allowed values file not found: {path} (no filtering will be applied).")
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        vals = {line.strip() for line in f if line.strip()}
+    log(f"Loaded {len(vals)} allowed filter values from {path}.")
+    return vals
 
 
 def run_pipeline():

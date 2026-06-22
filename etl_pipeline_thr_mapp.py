@@ -11,6 +11,7 @@ Requirements:
 import os
 import re
 import math
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import List, Dict, Optional, Tuple, Any
 
 import numpy as np
@@ -602,7 +603,8 @@ def load_allowed_values(path: str) -> Optional[set]:
     return vals
 
 
-def process_single_file(filepath: str, allowed_values: Optional[set], mappings: Dict[str, Dict[str, str]], merged_rows: List[Dict]):
+def process_single_file(filepath: str, allowed_values: Optional[set], mappings: Dict[str, Dict[str, str]]) -> List[Dict]:
+    merged_rows: List[Dict] = []
     filename = os.path.basename(filepath)
     base_name = os.path.splitext(filename)[0]
     log(f"\n--- Processing file: {filename} ---")
@@ -611,7 +613,7 @@ def process_single_file(filepath: str, allowed_values: Optional[set], mappings: 
         df = pd.read_csv(filepath)
     except Exception as e:
         log(f"Failed to read {filename}: {e}")
-        return
+        return merged_rows
 
     # Apply value mappings early
     if mappings:
@@ -731,6 +733,8 @@ def process_single_file(filepath: str, allowed_values: Optional[set], mappings: 
 
             merged_rows.append(merged_row)
 
+    return merged_rows
+
 
 # ---------------------------
 # RUN PIPELINE
@@ -748,9 +752,23 @@ def run_pipeline():
         log(f"No CSV files found in {INPUT_FOLDER}. Place files there and re-run.")
         return
 
-    for fname in files:
-        path = os.path.join(INPUT_FOLDER, fname)
-        process_single_file(path, allowed_values, mappings, merged_rows)
+    file_paths = [os.path.join(INPUT_FOLDER, fname) for fname in files]
+    max_workers = min(len(file_paths), os.cpu_count() or 4)
+    log(f"Processing {len(file_paths)} files in parallel using {max_workers} worker threads.")
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        future_to_path = {
+            executor.submit(process_single_file, path, allowed_values, mappings): path
+            for path in file_paths
+        }
+        for future in as_completed(future_to_path):
+            path = future_to_path[future]
+            try:
+                file_rows = future.result()
+                if file_rows:
+                    merged_rows.extend(file_rows)
+            except Exception as e:
+                log(f"Error processing {path} in thread: {e}")
 
     if merged_rows:
         merged_df = pd.DataFrame(merged_rows)

@@ -23,23 +23,37 @@ import seaborn as sns
 # ---------------------------
 
 # Folders
+FVAR = '_lmt_iou'
+# FVAR = ''
 INPUT_FOLDER = "csv_all"
 INPUT_FOLDER = "csv_serie"
 # INPUT_FOLDER = "csv_sweeps"
-OUTPUT_FOLDER = f"processed_{INPUT_FOLDER}"
-STATS_FOLDER = "stats"
-CORR_FOLDER = "correlations"
-PLOTS_FOLDER = "plots"
+OUTPUT_FOLDER = f"processed_{INPUT_FOLDER}{FVAR}"
+STATS_FOLDER = f"stats_{INPUT_FOLDER}{FVAR}"
+CORR_FOLDER = f"correlations_{INPUT_FOLDER}{FVAR}"
+PLOTS_FOLDER = f"plots_{INPUT_FOLDER}{FVAR}"
 MAPPINGS_FOLDER = "mappings"  # optional CSV mapping files can be placed here
 
-IOU_COLS = ["3_test_GDA_iou", "1_test/GDA/iou", "2_test/GDA/iou", 
+IOU_COLS_GDA = ["3_test_GDA_iou", "1_test/GDA/iou", "2_test/GDA/iou", 
             "3_test/GDA/iou", "1_test_GDA_iou", "2_test_GDA_iou"]
+IOU_COLS_SYNT = ["3_test_SYNT_iou", "1_test/SYNT/iou", "2_test/SYNT/iou", 
+            "3_test/SYNT/iou", "1_test_SYNT_iou", "2_test_SYNT_iou"]
+IOU_COLS_DK = ["3_test_DK_iou", "1_test/DK/iou", "2_test/DK/iou", 
+            "3_test/DK/iou", "1_test_DK_iou", "2_test_DK_iou"]
+
+IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
 IOU_BASELINE = 0.617
+IOU_BASELINE_GDA = 0.617
+
+# Splitting (grouping)
+SPLIT_COLUMNS = ['val', 'Sweep'] # list of columns to group by; can be empty
 
 # Cleaning
 COLUMNS_TO_REMOVE = ["Created", "Runtime"]
-NO_COLS = 14
-COLUMNS_TO_KEEP = ["batch_size", "epochs", "warmup_epochs", "wd", "ema"]
+NO_COLS = 15
+COLUMNS_TO_KEEP = ["batch_size", "epochs", "warmup_epochs", "wd", "ema", "sub", 
+                   "ID", "loss", "lrdec", "lrenc", "mod_ph1", "mod_ph2",
+                   "1_epoch", "2_epoch", "3_epoch"] + IOU_COLS + SPLIT_COLUMNS
 
 # Filtering by allowed values (file with newline separated allowed values)
 FILTER_COLUMN = "Status"
@@ -49,31 +63,31 @@ FILTER_VALUES_FILE = "allowed_values.txt"  # if missing, no allowed-values filte
 # Each entry: (column, operator, value)
 # operator one of: ">", ">=", "<", "<=", "==", "!="
 THRESHOLD_FILTERS = [
-    # Example: keep rows where Amount > 100
-    # ("Amount", ">", 100),
-    # Example: keep rows where Score >= 0.8
-    # ("Score", ">=", 0.8),
-    (m, '>', IOU_BASELINE) for m in IOU_COLS
+    (m, '>', IOU_BASELINE) for m in IOU_COLS_GDA
 ]
 
-# Value mappings
-# Two ways to specify mappings:
-# 1) Inline dictionary mapping: column -> {old_value: new_value, ...}
-# 2) Mapping CSV files placed in MAPPINGS_FOLDER with filename <column>_map.csv
-#    CSV format: old,new  (header optional)
 VALUE_MAPPINGS_INLINE: Dict[str, Dict[str, str]] = {
-    # Example:
-    # "Status": {"OK": "Approved", "NOK": "Rejected"},
-    "val": {          # map raw values → output filename suffix
+    "val": {
     "/users/project1/pt01299/synt/gda70/train/index_val.csv": "gda",
     "/users/project1/pt01299/synt/segformer_dataset255_all/val/index.csv": "s",
     "/users/project1/pt01299/synt/mix_val.csv": "m",
     "/users/project1/pt01299/synt/DK/osfstorage/dataset_v2/solardk_dataset_neurips_v2/gentofte_trainval/val/index.csv": "dk"
-} # jeszcze Sweep
+    },
+    "Sweep": {
+        "rbnt81jd": 'dk-dk',
+        "5i7wk6qc": 'dk-gda',
+        "ym6v8fkb": 's-gda',
+        "5d42fd7s": 's-s',
+        "baz3utdt": 'sub-gda',
+        "9lpqaisr": 'sub-s',
+        "kdjseui2": 'subM-gda',
+        "r4oohhlg": 'subM-m',
+        "gdw76omg": 'subM-s',
+        "cww3aozn": '16',
+        "7l3d9j8z": '16A',
+        "8ej2yv2y": 'sub-m',
+    }
 }
-
-# Splitting (grouping)
-SPLIT_COLUMNS = ['val', 'Sweep'] # ["batch_size", "epochs", "warmup_epochs", "wd", "ema"]  # list of columns to group by; can be empty
 
 # Sorting and limiting per-file
 ROW_LIMIT_FRACTION_PER_FILE = 0.0  # 0.0 means no limiting
@@ -98,7 +112,8 @@ PLOT_FIGSIZE = (6, 4)
 CATEGORICAL_UNIQUE_THRESHOLD = 5
 
 # Force same y-axis range for all plots: set to (ymin, ymax) or None for auto
-Y_AXIS_RANGE: Optional[Tuple[float, float]] = None  # e.g., (0, 100)
+Y_AXIS_RANGE: Optional[Tuple[float, float]] = (0.4, 0.8)
+Y_AXIS_RANGE: Optional[Tuple[float, float]] = (0, 0.8)
 
 # Misc
 VERBOSE = True
@@ -297,6 +312,14 @@ def apply_threshold_filters(df: pd.DataFrame, thresholds: List[Tuple[str, str, A
 # CLEANING, SPLITTING, ANALYSIS (modified to include 'all' group)
 # ---------------------------
 
+def select_columns(df: pd.DataFrame, cols_to_save: List[str]) -> pd.DataFrame:
+    cols_present = [c for c in cols_to_save if c in df.columns]
+    if cols_present:
+        log(f"Saving columns: {cols_present}")
+        return df[cols_present]
+    return df
+
+
 def remove_selected_columns(df: pd.DataFrame, cols_to_remove: List[str]) -> pd.DataFrame:
     cols_present = [c for c in cols_to_remove if c in df.columns]
     if cols_present:
@@ -336,6 +359,11 @@ def split_dataframe_with_all(df: pd.DataFrame, group_cols: List[str]) -> Dict[st
     """
     Split df into groups by group_cols and always include an 'all' group.
     Returns dict mapping group_key -> group_df. 'all' key contains the whole df.
+
+    Behavior:
+    - Always include the 'all' group containing the full dataframe.
+    - Create groups for each individual column in `group_cols` that exists in the df.
+    - Also create combined groups for the full set of existing group columns (as before).
     """
     groups = {"all": df.copy().reset_index(drop=True)}
     if not group_cols:
@@ -344,15 +372,34 @@ def split_dataframe_with_all(df: pd.DataFrame, group_cols: List[str]) -> Dict[st
     if not existing_group_cols:
         log("No group columns found in file; only 'all' group will be used.")
         return groups
-    grouped = df.groupby(existing_group_cols, dropna=False)
-    for group_values, group_df in grouped:
-        if isinstance(group_values, tuple):
-            row = pd.Series({col: val for col, val in zip(existing_group_cols, group_values)})
-        else:
-            row = pd.Series({existing_group_cols[0]: group_values})
-        key = "__".join(f"{col}={row[col]}" for col in existing_group_cols)
-        key = sanitize_for_filename(key)
-        groups[key] = group_df.reset_index(drop=True)
+
+    # Create groups for each individual column
+    for col in existing_group_cols:
+        grouped_single = df.groupby(col, dropna=False)
+        for val, group_df in grouped_single:
+            # Normalize missing values to None so sanitize_for_filename yields 'NA'
+            key_val = None if pd.isna(val) else val
+            key = f"{col}={key_val}"
+            key = sanitize_for_filename(key)
+            groups[key] = group_df.reset_index(drop=True)
+
+    # Create combination groups (preserve previous behavior)
+    if len(existing_group_cols) > 1:
+        grouped = df.groupby(existing_group_cols, dropna=False)
+        for group_values, group_df in grouped:
+            if isinstance(group_values, tuple):
+                row = pd.Series({col: val for col, val in zip(existing_group_cols, group_values)})
+            else:
+                row = pd.Series({existing_group_cols[0]: group_values})
+            parts = []
+            for col in existing_group_cols:
+                val = row[col]
+                val = None if pd.isna(val) else val
+                parts.append(f"{col}={val}")
+            key = "__".join(parts)
+            key = sanitize_for_filename(key)
+            groups[key] = group_df.reset_index(drop=True)
+
     log(f"Split into {len(groups)-1} specific groups (+ 'all') using columns: {existing_group_cols}")
     return groups
 
@@ -442,6 +489,7 @@ def ensure_plot_subfolder(source_base: str, group_key: str) -> str:
 def plot_violin_and_strip(df: pd.DataFrame, x_col: str, y_col: str, out_path: str, y_range: Optional[Tuple[float, float]] = Y_AXIS_RANGE):
     """
     Create a violin plot (x categorical, y numeric) with an overlaid stripplot.
+    Categories are sorted by their values.
     """
     # Prepare data
     x = df[x_col].astype(object)
@@ -451,15 +499,54 @@ def plot_violin_and_strip(df: pd.DataFrame, x_col: str, y_col: str, out_path: st
         log(f"Not enough data to plot violin for {y_col} vs {x_col}. Skipping.")
         return
 
+    # Sort by x_col to get ordered categories
+    if x_col != 'ID':
+        plot_df = plot_df.sort_values(by=x_col)
+    # Get unique sorted categories
+    sorted_categories = plot_df[x_col].unique().tolist()
+
     plt.figure(figsize=PLOT_FIGSIZE)
     sns.set(style="whitegrid")
     try:
-        sns.violinplot(x=x_col, y=y_col, data=plot_df, inner=None, color="lightgray")
-        sns.stripplot(x=x_col, y=y_col, data=plot_df, color="black", size=3, jitter=True)
+        sns.violinplot(x=x_col, y=y_col, data=plot_df, inner=None, color="lightgray", order=sorted_categories)
+        sns.stripplot(x=x_col, y=y_col, data=plot_df, color="black", size=3, jitter=True, order=sorted_categories)
     except Exception:
         # fallback: boxplot + strip
-        sns.boxplot(x=x_col, y=y_col, data=plot_df, color="lightgray")
-        sns.stripplot(x=x_col, y=y_col, data=plot_df, color="black", size=3, jitter=True)
+        sns.boxplot(x=x_col, y=y_col, data=plot_df, color="lightgray", order=sorted_categories)
+        sns.stripplot(x=x_col, y=y_col, data=plot_df, color="black", size=3, jitter=True, order=sorted_categories)
+
+    plt.xlabel(x_col)
+    plt.ylabel(y_col)
+    plt.title(f"{y_col} by {x_col}")
+    if y_range is not None:
+        plt.ylim(y_range)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=PLOT_DPI)
+    plt.close()
+
+
+def plot_box_and_strip(df: pd.DataFrame, x_col: str, y_col: str, out_path: str, y_range: Optional[Tuple[float, float]] = Y_AXIS_RANGE):
+    """
+    Create a violin plot (x categorical, y numeric) with an overlaid stripplot.
+    Categories are sorted by their values.
+    """
+    # Prepare data
+    x = df[x_col].astype(object)
+    y = pd.to_numeric(df[y_col], errors="coerce")
+    plot_df = pd.concat([x, y], axis=1).dropna()
+    if plot_df.shape[0] < 2:
+        log(f"Not enough data to plot violin for {y_col} vs {x_col}. Skipping.")
+        return
+
+    # Sort by x_col to get ordered categories
+    plot_df = plot_df.sort_values(by=x_col)
+    # Get unique sorted categories
+    sorted_categories = plot_df[x_col].unique().tolist()
+
+    plt.figure(figsize=PLOT_FIGSIZE)
+    sns.set(style="whitegrid")
+    sns.boxplot(x=x_col, y=y_col, data=plot_df, color="lightgray", order=sorted_categories)
+    sns.stripplot(x=x_col, y=y_col, data=plot_df, color="black", size=3, jitter=True, order=sorted_categories)
 
     plt.xlabel(x_col)
     plt.ylabel(y_col)
@@ -481,6 +568,9 @@ def plot_scatter_with_regression_and_fixed_y(df: pd.DataFrame, x_col: str, y_col
     if plot_df.shape[0] < 2:
         log(f"Not enough numeric data to plot {y_col} vs {x_col}. Skipping plot.")
         return
+
+    # Sort by x for consistent visualization
+    plot_df = plot_df.sort_values(by=x_col)
 
     plt.figure(figsize=PLOT_FIGSIZE)
     sns.set(style="whitegrid")
@@ -527,14 +617,10 @@ def process_single_file(filepath: str, allowed_values: Optional[set], mappings: 
     if mappings:
         df = apply_value_mappings(df, mappings)
 
+    df = select_columns(df, COLUMNS_TO_KEEP)
+
     # Per-file sort & limit
     df = sort_and_limit_rows(df, ROW_LIMIT_FRACTION_PER_FILE, POSSIBLE_SORT_COLUMNS)
-
-    # Drop empty and constant columns
-    df = drop_empty_and_constant_columns(df)
-
-    # Remove selected columns
-    df = remove_selected_columns(df, COLUMNS_TO_REMOVE)
 
     # Filter by allowed values if configured
     if allowed_values is not None and FILTER_COLUMN in df.columns:
@@ -601,24 +687,24 @@ def process_single_file(filepath: str, allowed_values: Optional[set], mappings: 
                 # Determine if x should be treated as categorical
                 treat_as_cat = is_categorical_for_plot(group_df[col], threshold=CATEGORICAL_UNIQUE_THRESHOLD)
 
-                # Build plot filename and path
-                plot_name = f"{base_name}__{group_key}__{sanitize_for_filename(target)}_vs_{sanitize_for_filename(col)}"
-                if treat_as_cat:
-                    plot_name += "__violin.png"
-                else:
-                    plot_name += "__scatter.png"
-                plot_path = os.path.join(plot_subfolder, plot_name)
-
                 # Create plot depending on type
                 try:
+                    # Scatter + regression (both numeric)
+                    plot_name = f"{base_name}__{group_key}__{sanitize_for_filename(target)}_vs_{sanitize_for_filename(col)}__scatter.png"
+                    plot_path = os.path.join(plot_subfolder, plot_name)
+                    plot_scatter_with_regression_and_fixed_y(group_df, col, target, plot_path, y_range=Y_AXIS_RANGE)
+                    log(f"Saved scatter/regression plot: {plot_path}")
                     if treat_as_cat:
                         # Violin + strip (y numeric, x categorical)
+                        plot_name = f"{base_name}__{group_key}__{sanitize_for_filename(target)}_vs_{sanitize_for_filename(col)}__violin.png"
+                        plot_path = os.path.join(plot_subfolder, plot_name)
                         plot_violin_and_strip(group_df, col, target, plot_path, y_range=Y_AXIS_RANGE)
                         log(f"Saved violin plot: {plot_path}")
-                    else:
-                        # Scatter + regression (both numeric)
-                        plot_scatter_with_regression_and_fixed_y(group_df, col, target, plot_path, y_range=Y_AXIS_RANGE)
-                        log(f"Saved scatter/regression plot: {plot_path}")
+                        # Box + strip (y numeric, x categorical)
+                        plot_name = f"{base_name}__{group_key}__{sanitize_for_filename(target)}_vs_{sanitize_for_filename(col)}__box.png"
+                        plot_path = os.path.join(plot_subfolder, plot_name)
+                        plot_box_and_strip(group_df, col, target, plot_path, y_range=Y_AXIS_RANGE)
+                        log(f"Saved box plot: {plot_path}")
                 except Exception as e:
                     log(f"Failed to create plot {plot_path}: {e}")
 
@@ -649,16 +735,6 @@ def process_single_file(filepath: str, allowed_values: Optional[set], mappings: 
 # ---------------------------
 # RUN PIPELINE
 # ---------------------------
-
-def load_allowed_values(path: str) -> Optional[set]:
-    if not path or not os.path.isfile(path):
-        log(f"Allowed values file not found: {path} (no filtering will be applied).")
-        return None
-    with open(path, "r", encoding="utf-8") as f:
-        vals = {line.strip() for line in f if line.strip()}
-    log(f"Loaded {len(vals)} allowed filter values from {path}.")
-    return vals
-
 
 def run_pipeline():
     ensure_dirs()

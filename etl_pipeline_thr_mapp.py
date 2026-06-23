@@ -16,6 +16,8 @@ from typing import List, Dict, Optional, Tuple, Any
 
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg') # Forces non-interactive file-rendering backend
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -24,36 +26,41 @@ import seaborn as sns
 # ---------------------------
 
 # Folders
-FVAR = '_lmt_iou'
-# FVAR = ''
+FVAR = '_lmt_GiouVS'
+FVAR = '_lmt_Giou'
+FVAR = ''
 INPUT_FOLDER = "csv_all"
-INPUT_FOLDER = "csv_serie"
+# INPUT_FOLDER = "csv_serie"
 # INPUT_FOLDER = "csv_sweeps"
+# INPUT_FOLDER = "ph333"
 OUTPUT_FOLDER = f"processed_{INPUT_FOLDER}{FVAR}"
 STATS_FOLDER = f"stats_{INPUT_FOLDER}{FVAR}"
 CORR_FOLDER = f"correlations_{INPUT_FOLDER}{FVAR}"
 PLOTS_FOLDER = f"plots_{INPUT_FOLDER}{FVAR}"
 MAPPINGS_FOLDER = "mappings"  # optional CSV mapping files can be placed here
 
-IOU_COLS_GDA = ["3_test_GDA_iou", "1_test/GDA/iou", "2_test/GDA/iou", 
-            "3_test/GDA/iou", "1_test_GDA_iou", "2_test_GDA_iou"]
+IOU_COLS_GDA = ["3_test_GDA_iou", "3_test/GDA/iou", "1_test/GDA/iou",  
+                "2_test/GDA/iou", "1_test_GDA_iou", "2_test_GDA_iou"]
 IOU_COLS_SYNT = ["3_test_SYNT_iou", "1_test/SYNT/iou", "2_test/SYNT/iou", 
             "3_test/SYNT/iou", "1_test_SYNT_iou", "2_test_SYNT_iou"]
 IOU_COLS_DK = ["3_test_DK_iou", "1_test/DK/iou", "2_test/DK/iou", 
             "3_test/DK/iou", "1_test_DK_iou", "2_test_DK_iou"]
 
 IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
+IOU_COLS = IOU_COLS_GDA
 IOU_BASELINE = 0.617
 IOU_BASELINE_GDA = 0.617
 
 # Splitting (grouping)
 SPLIT_COLUMNS = ['val', 'Sweep'] # list of columns to group by; can be empty
+SPLIT_COLUMNS = ['val'] # list of columns to group by; can be empty; Sweep
+CORRELATION_THR = 0.25
 
 # Cleaning
 COLUMNS_TO_REMOVE = ["Created", "Runtime"]
 NO_COLS = 15
 COLUMNS_TO_KEEP = ["batch_size", "epochs", "warmup_epochs", "wd", "ema", "sub", 
-                   "ID", "loss", "lrdec", "lrenc", "mod_ph1", "mod_ph2",
+                   "ID", "loss", "lrdec", "lrenc", "mod_ph1", "mod_ph2", "Sweep",
                    "1_epoch", "2_epoch", "3_epoch"] + IOU_COLS + SPLIT_COLUMNS
 
 # Filtering by allowed values (file with newline separated allowed values)
@@ -64,7 +71,7 @@ FILTER_VALUES_FILE = "allowed_values.txt"  # if missing, no allowed-values filte
 # Each entry: (column, operator, value)
 # operator one of: ">", ">=", "<", "<=", "==", "!="
 THRESHOLD_FILTERS = [
-    (m, '>', IOU_BASELINE) for m in IOU_COLS_GDA
+    # (m, '>', IOU_BASELINE) for m in IOU_COLS_GDA
 ]
 
 VALUE_MAPPINGS_INLINE: Dict[str, Dict[str, str]] = {
@@ -96,7 +103,6 @@ POSSIBLE_SORT_COLUMNS = IOU_COLS
 
 # Per-group limiting
 GROUP_LIMIT_FRACTION = 0.0
-# GROUP_LIMIT_FRACTION = 0.3
 POSSIBLE_GROUP_SORT_COLUMNS = IOU_COLS
 
 # Targets for repeated analysis
@@ -115,9 +121,17 @@ CATEGORICAL_UNIQUE_THRESHOLD = 5
 # Force same y-axis range for all plots: set to (ymin, ymax) or None for auto
 Y_AXIS_RANGE: Optional[Tuple[float, float]] = (0.4, 0.8)
 Y_AXIS_RANGE: Optional[Tuple[float, float]] = (0, 0.8)
+Y_AXIS_RANGE: Optional[Tuple[float, float]] = (0, 1)
+Y_AXIS_RANGE: Optional[Tuple[float, float]] = None
+
+# Y_AXIS_RANGE_GDA: Optional[Tuple[float, float]] = (0, 0.8)
+# Y_AXIS_RANGE_SYNT: Optional[Tuple[float, float]] = (0.5, 1)
+# Y_AXIS_RANGE_DK: Optional[Tuple[float, float]] = (0.5, 1)
+
+# Y_AXIS_RANGES = {}
 
 # Misc
-VERBOSE = True
+VERBOSE = False
 
 
 # ---------------------------
@@ -305,6 +319,8 @@ def apply_threshold_filters(df: pd.DataFrame, thresholds: List[Tuple[str, str, A
         df_out = _apply_single_threshold(df_out, col, op, val)
         if df_out.empty:
             log("All rows filtered out by threshold filters.")
+            break
+        if df_out.size != df.size: # only the first working filter
             break
     return df_out
 
@@ -494,7 +510,7 @@ def plot_violin_and_strip(df: pd.DataFrame, x_col: str, y_col: str, out_path: st
     """
     # Prepare data
     x = df[x_col].astype(object)
-    y = pd.to_numeric(df[y_col], errors="coerce")
+    y = df[y_col]
     plot_df = pd.concat([x, y], axis=1).dropna()
     if plot_df.shape[0] < 2:
         log(f"Not enough data to plot violin for {y_col} vs {x_col}. Skipping.")
@@ -533,7 +549,7 @@ def plot_box_and_strip(df: pd.DataFrame, x_col: str, y_col: str, out_path: str, 
     """
     # Prepare data
     x = df[x_col].astype(object)
-    y = pd.to_numeric(df[y_col], errors="coerce")
+    y = df[y_col]
     plot_df = pd.concat([x, y], axis=1).dropna()
     if plot_df.shape[0] < 2:
         log(f"Not enough data to plot violin for {y_col} vs {x_col}. Skipping.")
@@ -564,7 +580,7 @@ def plot_scatter_with_regression_and_fixed_y(df: pd.DataFrame, x_col: str, y_col
     Scatter plot with regression line for numeric x and numeric y.
     """
     x = pd.to_numeric(df[x_col], errors="coerce")
-    y = pd.to_numeric(df[y_col], errors="coerce")
+    y = df[y_col]
     plot_df = pd.concat([x, y], axis=1).dropna()
     if plot_df.shape[0] < 2:
         log(f"Not enough numeric data to plot {y_col} vs {x_col}. Skipping plot.")
@@ -620,6 +636,10 @@ def process_single_file(filepath: str, allowed_values: Optional[set], mappings: 
         df = apply_value_mappings(df, mappings)
 
     df = select_columns(df, COLUMNS_TO_KEEP)
+
+    for col in TARGET_VARIABLES:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # Per-file sort & limit
     df = sort_and_limit_rows(df, ROW_LIMIT_FRACTION_PER_FILE, POSSIBLE_SORT_COLUMNS)
@@ -683,7 +703,8 @@ def process_single_file(filepath: str, allowed_values: Optional[set], mappings: 
 
             # Plotting: iterate over other columns and decide plot type
             for col in group_df.columns:
-                if col == target:
+                if col == target or group_df[col].nunique(dropna=False) == 1 or (col in corrs and abs(corrs[col]) < CORRELATION_THR):
+                    log(f"Skipped: {col} at first plotting attempt")
                     continue
 
                 # Determine if x should be treated as categorical

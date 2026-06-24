@@ -4,6 +4,11 @@ import matplotlib.pyplot as plt
 
 # 1. Load the data
 # df = pd.read_csv('dff.csv')
+# df_long = pd.read_csv('df_long_all_SYNT.csv')
+# df_long = pd.read_csv('df_long_all_GDADK.csv')
+# df_long = pd.read_csv('df_long_all_total.csv')
+# df_long = pd.read_csv('df_long_SYNT.csv')
+# df_long = pd.read_csv('df_long_GDADK.csv')
 df_long = pd.read_csv('df_long_total.csv')
 
 # # 2. Reshape the data: Split the rows by phase (_x, _y, and blank)
@@ -44,7 +49,7 @@ g = sns.relplot(
 )
 
 # 5. Visual Cleanup
-g.set(ylim=(0.5, 0.85))
+# g.set(ylim=(0.4, 0.85))
 g.set_axis_labels("", "")
 g.set_titles("{col_name}")
 g.despine(left=True, bottom=False)

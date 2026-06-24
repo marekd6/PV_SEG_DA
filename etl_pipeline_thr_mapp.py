@@ -27,8 +27,8 @@ import seaborn as sns
 
 # Folders
 FVAR = '_lmt_GiouVS'
-FVAR = '_lmt_Giou_nopl_3met'
-# FVAR = '_nopl_3met'
+FVAR = '_lmt_Giou_nopl_3met_mod'
+FVAR = '_nopl_3met'
 # FVAR = ''
 INPUT_FOLDER = "csv_all"
 # INPUT_FOLDER = "csv_serie"
@@ -54,6 +54,7 @@ IOU_BASELINE = 0.617
 IOU_BASELINE_GDA = 0.617
 
 # Splitting (grouping)
+SPLIT_COLUMNS = ['val', 'Sweep', 'mod_ph2'] # list of columns to group by; can be empty
 SPLIT_COLUMNS = ['val', 'Sweep'] # list of columns to group by; can be empty
 # SPLIT_COLUMNS = ['val'] # list of columns to group by; can be empty; Sweep
 CORRELATION_THR = 0.25
@@ -62,7 +63,7 @@ CORRELATION_THR = 0.25
 COLUMNS_TO_REMOVE = ["Created", "Runtime"]
 NO_COLS = 15
 COLUMNS_TO_KEEP = ["batch_size", "epochs", "warmup_epochs", "wd", "ema", "sub", 
-                   "ID", "loss", "lrdec", "lrenc", "mod_ph1", "mod_ph2", #"Sweep",
+                   "ID", "loss", "lrdec", "lrenc", "mod_ph1", "mod_ph2", # "Sweep",
                    "1_epoch", "2_epoch", "3_epoch"] + IOU_COLS + SPLIT_COLUMNS
 
 # Filtering by allowed values (file with newline separated allowed values)
@@ -73,7 +74,7 @@ FILTER_VALUES_FILE = "allowed_values.txt"  # if missing, no allowed-values filte
 # Each entry: (column, operator, value)
 # operator one of: ">", ">=", "<", "<=", "==", "!="
 THRESHOLD_FILTERS = [
-    (m, '>', IOU_BASELINE) for m in IOU_COLS_GDA
+    # (m, '>', IOU_BASELINE) for m in IOU_COLS_GDA
 ]
 
 VALUE_MAPPINGS_INLINE: Dict[str, Dict[str, str]] = {

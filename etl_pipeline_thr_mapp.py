@@ -27,11 +27,13 @@ import seaborn as sns
 
 # Folders
 FVAR = '_lmt_GiouVS'
-FVAR = '_lmt_Giou'
-FVAR = ''
+FVAR = '_lmt_Giou_nopl_3met'
+# FVAR = '_nopl_3met'
+# FVAR = ''
 INPUT_FOLDER = "csv_all"
 # INPUT_FOLDER = "csv_serie"
-# INPUT_FOLDER = "csv_sweeps"
+INPUT_FOLDER = "csv_sweeps"
+INPUT_FOLDER = "csv_serie_ph1"
 # INPUT_FOLDER = "ph333"
 OUTPUT_FOLDER = f"processed_{INPUT_FOLDER}{FVAR}"
 STATS_FOLDER = f"stats_{INPUT_FOLDER}{FVAR}"
@@ -47,20 +49,20 @@ IOU_COLS_DK = ["3_test_DK_iou", "1_test/DK/iou", "2_test/DK/iou",
             "3_test/DK/iou", "1_test_DK_iou", "2_test_DK_iou"]
 
 IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
-IOU_COLS = IOU_COLS_GDA
+# IOU_COLS = IOU_COLS_GDA
 IOU_BASELINE = 0.617
 IOU_BASELINE_GDA = 0.617
 
 # Splitting (grouping)
 SPLIT_COLUMNS = ['val', 'Sweep'] # list of columns to group by; can be empty
-SPLIT_COLUMNS = ['val'] # list of columns to group by; can be empty; Sweep
+# SPLIT_COLUMNS = ['val'] # list of columns to group by; can be empty; Sweep
 CORRELATION_THR = 0.25
 
 # Cleaning
 COLUMNS_TO_REMOVE = ["Created", "Runtime"]
 NO_COLS = 15
 COLUMNS_TO_KEEP = ["batch_size", "epochs", "warmup_epochs", "wd", "ema", "sub", 
-                   "ID", "loss", "lrdec", "lrenc", "mod_ph1", "mod_ph2", "Sweep",
+                   "ID", "loss", "lrdec", "lrenc", "mod_ph1", "mod_ph2", #"Sweep",
                    "1_epoch", "2_epoch", "3_epoch"] + IOU_COLS + SPLIT_COLUMNS
 
 # Filtering by allowed values (file with newline separated allowed values)
@@ -71,7 +73,7 @@ FILTER_VALUES_FILE = "allowed_values.txt"  # if missing, no allowed-values filte
 # Each entry: (column, operator, value)
 # operator one of: ">", ">=", "<", "<=", "==", "!="
 THRESHOLD_FILTERS = [
-    # (m, '>', IOU_BASELINE) for m in IOU_COLS_GDA
+    (m, '>', IOU_BASELINE) for m in IOU_COLS_GDA
 ]
 
 VALUE_MAPPINGS_INLINE: Dict[str, Dict[str, str]] = {
@@ -116,7 +118,7 @@ PLOT_DPI = 150
 PLOT_FIGSIZE = (6, 4)
 
 # Treat x as categorical if number of unique values <= this threshold
-CATEGORICAL_UNIQUE_THRESHOLD = 5
+CATEGORICAL_UNIQUE_THRESHOLD = 6
 
 # Force same y-axis range for all plots: set to (ymin, ymax) or None for auto
 Y_AXIS_RANGE: Optional[Tuple[float, float]] = (0.4, 0.8)
@@ -131,7 +133,7 @@ Y_AXIS_RANGE: Optional[Tuple[float, float]] = None
 # Y_AXIS_RANGES = {}
 
 # Misc
-VERBOSE = False
+VERBOSE = True
 
 
 # ---------------------------
@@ -701,35 +703,35 @@ def process_single_file(filepath: str, allowed_values: Optional[set], mappings: 
             save_correlations(corrs, corr_path)
             log(f"Saved correlations: {corr_path}")
 
-            # Plotting: iterate over other columns and decide plot type
-            for col in group_df.columns:
-                if col == target or group_df[col].nunique(dropna=False) == 1 or (col in corrs and abs(corrs[col]) < CORRELATION_THR):
-                    log(f"Skipped: {col} at first plotting attempt")
-                    continue
+            # # Plotting: iterate over other columns and decide plot type
+            # for col in group_df.columns:
+            #     if col == target or group_df[col].nunique(dropna=False) == 1 or (col in corrs and abs(corrs[col]) < CORRELATION_THR):
+            #         log(f"Skipped: {col} at first plotting attempt")
+            #         continue
 
-                # Determine if x should be treated as categorical
-                treat_as_cat = is_categorical_for_plot(group_df[col], threshold=CATEGORICAL_UNIQUE_THRESHOLD)
+            #     # Determine if x should be treated as categorical
+            #     treat_as_cat = is_categorical_for_plot(group_df[col], threshold=CATEGORICAL_UNIQUE_THRESHOLD)
 
-                # Create plot depending on type
-                try:
-                    # Scatter + regression (both numeric)
-                    plot_name = f"{base_name}__{group_key}__{sanitize_for_filename(target)}_vs_{sanitize_for_filename(col)}__scatter.png"
-                    plot_path = os.path.join(plot_subfolder, plot_name)
-                    plot_scatter_with_regression_and_fixed_y(group_df, col, target, plot_path, y_range=Y_AXIS_RANGE)
-                    log(f"Saved scatter/regression plot: {plot_path}")
-                    if treat_as_cat:
-                        # Violin + strip (y numeric, x categorical)
-                        plot_name = f"{base_name}__{group_key}__{sanitize_for_filename(target)}_vs_{sanitize_for_filename(col)}__violin.png"
-                        plot_path = os.path.join(plot_subfolder, plot_name)
-                        plot_violin_and_strip(group_df, col, target, plot_path, y_range=Y_AXIS_RANGE)
-                        log(f"Saved violin plot: {plot_path}")
-                        # Box + strip (y numeric, x categorical)
-                        plot_name = f"{base_name}__{group_key}__{sanitize_for_filename(target)}_vs_{sanitize_for_filename(col)}__box.png"
-                        plot_path = os.path.join(plot_subfolder, plot_name)
-                        plot_box_and_strip(group_df, col, target, plot_path, y_range=Y_AXIS_RANGE)
-                        log(f"Saved box plot: {plot_path}")
-                except Exception as e:
-                    log(f"Failed to create plot {plot_path}: {e}")
+            #     # Create plot depending on type
+            #     try:
+            #         # Scatter + regression (both numeric)
+            #         plot_name = f"{base_name}__{group_key}__{sanitize_for_filename(target)}_vs_{sanitize_for_filename(col)}__scatter.png"
+            #         plot_path = os.path.join(plot_subfolder, plot_name)
+            #         plot_scatter_with_regression_and_fixed_y(group_df, col, target, plot_path, y_range=Y_AXIS_RANGE)
+            #         log(f"Saved scatter/regression plot: {plot_path}")
+            #         if treat_as_cat:
+            #             # Violin + strip (y numeric, x categorical)
+            #             plot_name = f"{base_name}__{group_key}__{sanitize_for_filename(target)}_vs_{sanitize_for_filename(col)}__violin.png"
+            #             plot_path = os.path.join(plot_subfolder, plot_name)
+            #             plot_violin_and_strip(group_df, col, target, plot_path, y_range=Y_AXIS_RANGE)
+            #             log(f"Saved violin plot: {plot_path}")
+            #             # Box + strip (y numeric, x categorical)
+            #             plot_name = f"{base_name}__{group_key}__{sanitize_for_filename(target)}_vs_{sanitize_for_filename(col)}__box.png"
+            #             plot_path = os.path.join(plot_subfolder, plot_name)
+            #             plot_box_and_strip(group_df, col, target, plot_path, y_range=Y_AXIS_RANGE)
+            #             log(f"Saved box plot: {plot_path}")
+            #     except Exception as e:
+            #         log(f"Failed to create plot {plot_path}: {e}")
 
             # Prepare merged summary row
             top_corr_var = None

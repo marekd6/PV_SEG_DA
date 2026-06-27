@@ -450,7 +450,8 @@ def compute_correlations(df: pd.DataFrame, target: str) -> pd.Series:
         return pd.Series(dtype=float)
     corrs = {}
     for col in numeric_df.columns:
-        if col == target:
+        # if col == target:
+        if col in IOU_COLS:
             continue
         pair = numeric_df[[target, col]].dropna()
         if len(pair) < 2:

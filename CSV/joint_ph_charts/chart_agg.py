@@ -11,24 +11,27 @@ IOU_COLS_DK = ["3_test_DK_iou", "1_test/DK/iou", "2_test/DK/iou",
 
 IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
 
-df = pd.read_csv('csv_all_jjj/modf/ph123b.csv')
+df = pd.read_csv('CSV/joint_ph_charts/modf/ph123b.csv')
+# df = pd.read_csv('CSV/joint_ph_charts/modf/proc_ph1.csv')
 
 cols = df.columns
-cols = list(set(cols) & set(IOU_COLS)) + ['comb_key']
+group_key = 'comb_key'
+# group_key = 'tr_val'
+cols = list(set(cols) & set(IOU_COLS)) + [group_key]
 
 df = df[cols]
 
-# 4. Group by the new 'comb_key' and aggregate all the numeric columns (e.g., taking the mean)
-df_agg = df.groupby('comb_key').max().reset_index()
-# df_agg = df.groupby('comb_key').median().reset_index()
-# df_agg = df.groupby('comb_key').mean().reset_index()
-# df_agg = df.groupby('comb_key').quantile(0.75).reset_index()
+# 4. Group by the new group_key and aggregate all the numeric columns (e.g., taking the mean)
+df_agg = df.groupby(group_key).max().reset_index()
+# df_agg = df.groupby(group_key).median().reset_index()
+# df_agg = df.groupby(group_key).mean().reset_index()
+# df_agg = df.groupby(group_key).quantile(0.75).reset_index()
 
 # 5. Melt the dataframe
-# This takes all columns EXCEPT 'comb_key' and turns them into two columns: 
+# This takes all columns EXCEPT group_key and turns them into two columns: 
 # 'col_name' (e.g., "1_DK") and 'mean' (the actual value)
 df_long = df_agg.melt(
-    id_vars=['comb_key'],         # Keep comb_key as the row identifier
+    id_vars=[group_key],         # Keep comb_key as the row identifier
     var_name='col_name',        # The old column headers will go here
     value_name='mean'      # The cell values will go here
 )
@@ -42,7 +45,7 @@ df_long['trg_var'] = df_long['trg_var'].str.split('_', expand=True)[1]
 # Important: Convert the phase number back to an integer so the X-axis scales correctly
 df_long['ph_nr'] = pd.to_numeric(df_long['ph_nr'])
 
-# df_long['gd'] = 'gda' in df_long['comb_key']
+# df_long['gd'] = 'gda' in df_long[group_key]
 
 # 7. Plotting
 sns.set_theme(style="whitegrid")
@@ -51,8 +54,8 @@ g = sns.relplot(
     kind="line",
     x="ph_nr",             # The extracted phase number (1, 2, 3)
     y="mean",         # The aggregated values
-    hue="comb_key",          # Grouping comb_key
-    style="comb_key",        
+    hue=group_key,          # Grouping comb_key
+    style=group_key,        
     col="trg_var",         # The extracted target variable (DK, GDA)
     col_order=["DK", "GDA", "SYNT"],
     markers=True,

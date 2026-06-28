@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 # df_long = pd.read_csv('df_long_GDADK.csv')
 # df_long = pd.read_csv('df_long_DK.csv')
 # df_long = pd.read_csv('df_long_total.csv')
-df_long = pd.read_csv('csv_all_jjj/modf/long.csv')
+df_long = pd.read_csv('CSV/joint_ph_charts/modf/long.csv')
 
 # # 2. Reshape the data: Split the rows by phase (_x, _y, and blank)
 # # We pull the specific columns for each phase and rename them so they stack perfectly

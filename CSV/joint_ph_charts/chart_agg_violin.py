@@ -11,7 +11,7 @@ IOU_COLS_DK = ["3_test_DK_iou", "1_test/DK/iou", "2_test/DK/iou",
 
 IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
 
-df = pd.read_csv('csv_all_jjj/modf/ph123b.csv')
+df = pd.read_csv('CSV/joint_ph_charts/modf/ph123b.csv')
 
 cols = df.columns
 cols = list(set(cols) & set(IOU_COLS)) + ['comb_key']

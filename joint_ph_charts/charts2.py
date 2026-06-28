@@ -6,10 +6,13 @@ import matplotlib.pyplot as plt
 # df = pd.read_csv('dff.csv')
 # df_long = pd.read_csv('df_long_all_SYNT.csv')
 # df_long = pd.read_csv('df_long_all_GDADK.csv')
+# df_long = pd.read_csv('df_long_all_DK.csv')
 # df_long = pd.read_csv('df_long_all_total.csv')
 # df_long = pd.read_csv('df_long_SYNT.csv')
 # df_long = pd.read_csv('df_long_GDADK.csv')
-df_long = pd.read_csv('df_long_total.csv')
+# df_long = pd.read_csv('df_long_DK.csv')
+# df_long = pd.read_csv('df_long_total.csv')
+df_long = pd.read_csv('csv_all_jjj/modf/long.csv')
 
 # # 2. Reshape the data: Split the rows by phase (_x, _y, and blank)
 # # We pull the specific columns for each phase and rename them so they stack perfectly
@@ -37,11 +40,13 @@ sns.set_theme(style="whitegrid")
 g = sns.relplot(
     data=df_long,
     kind="line",
-    x="ph_nr",             # The phase numbers (now all nicely in one column: 1, 2, 3)
-    y="stat_mean",         # The values
-    hue="series",          # Colors by your cleaned comb_key
-    style="series",        # Automatically gives each series a unique marker shape
-    col="trg_var",         # Creates the DK / GDA panels
+    x="ph", # "ph_nr",             # The phase numbers (now all nicely in one column: 1, 2, 3)
+    y="meanGDA", # "stat_mean",         # The values
+    # hue="series",          # Colors by your cleaned comb_key
+    hue="comb_key",          # Colors by your cleaned comb_key
+    style="comb_key",        # Automatically gives each series a unique marker shape
+    # style="series",        # Automatically gives each series a unique marker shape
+    # col="trg_var",         # Creates the DK / GDA panels
     markers=True,
     dashes=False,          # Keeps lines solid
     height=4,

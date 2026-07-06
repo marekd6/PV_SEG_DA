@@ -314,18 +314,95 @@ def q(df, x, h, ious=IOU123, fff=plot_grouped_barplot):
         fff(df, x, iou, h)
 
 
+def hists(df: pd.DataFrame, ious=IOU_COLS, h='tr_val'):
+    # df = pd.melt(
+    #     df,
+    #     # id_vars=id_vars,
+    #     value_vars=ious,
+    #     var_name='facet_var',
+    #     value_name='y_value'
+    # )
+    df_long = df.melt(id_vars=[h], value_vars=ious, var_name='ph_trg', value_name='iou') # 3_test_GDA_iou
+    df_long[['phase', 'test data']] = df_long['ph_trg'].str.split('_', n=1, expand=True)
+    df_long['test data'] = df_long['test data'].str.split('_', expand=True)[1]
+    df_long['phase'] = pd.to_numeric(df_long['phase'], downcast='integer')
+    # sns.displot(df_long,
+    #             x='iou',
+    #             col='phase',
+    #             row='test data',
+    #             row_order=["DK", "GDA", "SYNT"],
+    #             # stat="density",
+    #             stat="probability",
+    #             # kind='kde',
+    #             common_norm=False,
+    #             hue='tr_val',
+    # )
+    sns.displot(df_long,
+                x='iou',
+                col='phase',
+                row='test data',
+                row_order=["DK", "GDA", "SYNT"],
+                kind='kde',
+                common_norm=False,
+                hue=h,
+    )
+    # sns.displot(df_long,
+    #             x='iou',
+    #             row='phase',
+    #             col='test data',
+    #             col_order=["DK", "GDA", "SYNT"],
+    #             stat="density",
+    #             common_norm=False
+    # )
+    plt.show()
+
+
+def hists2d(df: pd.DataFrame, the_snd, ious=IOU_COLS, h: str | None ='tr_val'):
+    idv = [the_snd]
+    if h:
+        idv.append(h)
+    df_long = df.melt(id_vars=idv, value_vars=ious, var_name='ph_trg', value_name='iou') # 3_test_GDA_iou
+    df_long[['phase', 'test data']] = df_long['ph_trg'].str.split('_', n=1, expand=True)
+    df_long['test data'] = df_long['test data'].str.split('_', expand=True)[1]
+    df_long['phase'] = pd.to_numeric(df_long['phase'], downcast='integer')
+    # sns.displot(df_long,
+    #             x='iou',
+    #             y=the_snd,
+    #             col='phase',
+    #             row='test data',
+    #             row_order=["DK", "GDA", "SYNT"],
+    #             stat="probability",
+    #             common_norm=False,
+    #             hue=h,
+    # )
+    sns.displot(df_long,
+                x='iou',
+                y=the_snd,
+                row='phase',
+                col='test data',
+                col_order=["DK", "GDA", "SYNT"],
+                stat="density",
+                common_norm=False,
+                hue=h,
+                log_scale=(False, True)
+    )
+    plt.show()
+
+
 def mn():
-    fff = 'CSV/joint_ph_charts/modf_rnt/cnc123b.csv'
     fff = 'CSV/joint_ph_charts/modf_rntg2/cnc123b.csv'
-    # fff = 'CSV/joint_ph_charts/modf_rnt/ph123b.csv'
 
     df = pd.read_csv(fff)
-    # splt by gda lvl or sth else (gda, dk, s)
+    # TODO splt by gda lvl or sth else (gda, dk, s)
 
-    # by_ph_scen_trval_ema(df)
+    # by_ph_scen_trval_ema(df) # ok, deprec by q
     # by_ph_scen_ema_trval(df)
     # by_ph_scen_trval_bs(df)
     q(df, 'ema', 'tr_val')
+    hists(df)
+    hists2d(df, 'Runtime')
+    hists2d(df, 'Runtime', h=None)
+
 
     # plot_grouped_boxplot(
     #     df=df,
@@ -365,15 +442,21 @@ def mn():
     #     # hue_var=None
     # )
 
+
+
+
     # sns.stripplot(
     #     data=df,
     #     x='Runtime',
     #     y=IOU_COLS_GDA[0],
     #     hue='tr_val',
-    #     jitter=False,
-    #     dodge=True,
+    #     # jitter=False,
+    #     # dodge=True,
     # )
     # plt.show()
+
+
+
 
     # plot_grouped_boxplot(
     #     df=df,

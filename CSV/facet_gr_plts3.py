@@ -389,19 +389,32 @@ def hists2d(df: pd.DataFrame, the_snd, ious=IOU_COLS, h: str | None ='tr_val'):
     plt.show()
 
 
+def valid(df):
+    # q(df, 'ema', 'tr_val')
+    # q(df, 'ema', 'tr_val', fff=plot_grouped_boxplot)
+    q(df, 'ema', 'tr_val', fff=plot_grouped_violinplot)
+    # hists(df)
+    # hists2d(df, 'Runtime')
+    # hists2d(df, 'Runtime', h=None)
+
+
 def mn():
     fff = 'CSV/joint_ph_charts/modf_rntg2/cnc123b.csv'
 
     df = pd.read_csv(fff)
+    # valid(df)
     # TODO splt by gda lvl or sth else (gda, dk, s)
+    df['s_lvl'] = ['s' in x for x in df['train']]
+    for t in [True, False]:
+        valid(df[df['s_lvl'] == t])
 
     # by_ph_scen_trval_ema(df) # ok, deprec by q
     # by_ph_scen_ema_trval(df)
     # by_ph_scen_trval_bs(df)
-    q(df, 'ema', 'tr_val')
-    hists(df)
-    hists2d(df, 'Runtime')
-    hists2d(df, 'Runtime', h=None)
+    # q(df, 'ema', 'tr_val')
+    # hists(df)
+    # hists2d(df, 'Runtime')
+    # hists2d(df, 'Runtime', h=None)
 
 
     # plot_grouped_boxplot(
@@ -465,7 +478,53 @@ def mn():
     #     hue_var='tr_val'
     #     # hue_var=None
     # )
-    
+
+RNTMS = ['1_cum_Runtime', '2_cum_Runtime', '3_cum_Runtime']
+
+def plot_pnt_line_joint_rnt(df: pd.DataFrame, x='Runtime', h='comb_key', ious=IOU_COLS, rntms=RNTMS):
+    df_long = df.melt(id_vars=[h]+RNTMS, value_vars=ious, var_name='ph_trg', value_name='iou') # 3_test_GDA_iou
+    print(df_long.columns)
+    print(df_long.head())
+    # df_long = df_long.melt(id_vars=[h, 'ph_trg', 'iou'], value_vars=rntms, var_name='ph_rnt', value_name='rnt') # 3_cum_Runtime
+    df_long[['phase', 'test data']] = df_long['ph_trg'].str.split('_', n=1, expand=True) # 3, test_GDA_iou
+    df_long['test data'] = df_long['test data'].str.split('_', expand=True)[1] # GDA
+    df_long = df_long.melt(id_vars=[h, 'phase', 'iou', 'test data'], value_vars=rntms, var_name='ph_rnt', value_name='runtime') # 3_cum_Runtime
+    df_long[['phase', 'rrr']] = df_long['ph_rnt'].str.split('_', n=1, expand=True) # 3, cum_Runtime
+    # df_long['test data'] = df_long['test data'].str.split('_', expand=True)[1] # GDA
+    # df_long['phase'] = pd.to_numeric(df_long['phase'], downcast='integer')
+    print(df_long.columns)
+    print(df_long.head())
+
+    sns.catplot(
+    # sns.displot(
+        data=df_long,
+        kind="point",
+        # x="phase",
+        x="runtime",
+        y="iou",
+        hue=h,
+        col="test data",
+        col_order=["DK", "GDA", "SYNT"],
+        # aspect=0.5,
+        # sharey=shx,
+    )
+    plt.plot()
+
+
+def mn_joint():
+    fff = 'CSV/joint_ph_charts/modf_rntg2/ph123b.csv'
+    df = pd.read_csv(fff)
+    # TODO splt by gda lvl or sth else (gda, dk, s)
+    df['s_lvl'] = ['s' in x for x in df['train']]
+    # for t in [True, False]:
+    #     valid(df[df['s_lvl'] == t])
+    df['1_cum_Runtime'] = df['Runtime_x']
+    df['2_cum_Runtime'] = df['Runtime_y'] + df['1_cum_Runtime']
+    df['3_cum_Runtime'] = df['Runtime'] + df['2_cum_Runtime']
+    # bar plot Runtime - phase - comb_key
+    plot_pnt_line_joint_rnt(df)
+
 
 if __name__ == '__main__':
-    mn()
+    # mn()
+    mn_joint()

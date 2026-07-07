@@ -478,7 +478,7 @@ def plot_pnt_line_joint_rnt(df: pd.DataFrame, q=1, x='Runtime', h='comb_key', io
     # df_long = (pd.wide_to_long(df, stubnames=['iou_SYNT', 'iou_GDA', 'iou_DK', 'Runtime'], i=[h], j='ph', sep='_', suffix=r"\d+")).reset_index()
     # print(df_long.columns)
     # print(df_long.head(10))
-    df_long = pd.melt(df_long, id_vars=[h, 'phase', 'Runtime'], value_vars=['iou_SYNT', 'iou_GDA', 'iou_DK'], var_name='test data', value_name='iou')
+    df_long = pd.melt(df_long, id_vars=[h, 's_lvl', 'phase', 'Runtime'], value_vars=['iou_SYNT', 'iou_GDA', 'iou_DK'], var_name='test data', value_name='iou')
     df_long['test data'] = df_long['test data'].str.replace('iou_', '')
     # print(df_long.columns)
     # print(df_long.head(10))
@@ -550,13 +550,16 @@ def plot_pnt_line_joint_rnt(df: pd.DataFrame, q=1, x='Runtime', h='comb_key', io
         sort=True,
     )
     # plot_df = df_long.groupby(by=[h, 'phase'], as_index=False).agg(iou=('iou', 'mean'), Runtime=('Runtime', 'mean'))
-    plot_df_iou = df_long.groupby(by=[h, 'phase', 'test data'], as_index=False).agg(iou=('iou', 'mean')) # IoU by ph, data, key
-    plot_df_runtime = df_long.groupby(by=[h, 'phase'], as_index=False).agg(Runtime=('Runtime', 'mean')) # time by ph, key
+    # plot_df_iou = df_long.groupby(by=[h, 'phase', 'test data'], as_index=False).agg(iou=('iou', 'mean')) # IoU by ph, data, key
+    # plot_df_runtime = df_long.groupby(by=[h, 'phase'], as_index=False).agg(Runtime=('Runtime', 'mean')) # time by ph, key
+    plot_df_iou = df_long.groupby(by=[h, 'phase', 'test data', 's_lvl'], as_index=False).agg(iou=('iou', 'mean')) # IoU by ph, data, key
+    plot_df_runtime = df_long.groupby(by=[h, 'phase', 's_lvl'], as_index=False).agg(Runtime=('Runtime', 'mean')) # time by ph, key
     # print(plot_df_iou.columns)
     # print(plot_df_runtime.columns)
     # print(plot_df_iou.head())
     # print(plot_df_runtime.head())
-    plot_df = pd.merge(left=plot_df_iou, right=plot_df_runtime, on=[h, 'phase'])
+    # plot_df = pd.merge(left=plot_df_iou, right=plot_df_runtime, on=[h, 'phase'])
+    plot_df = pd.merge(left=plot_df_iou, right=plot_df_runtime, on=[h, 'phase', 's_lvl'])
     # print(plot_df.columns)
     # print(plot_df.head())
     if q == 6: # only this one makes sense!!!!!!!!!!!!!!!!!!!
@@ -570,6 +573,21 @@ def plot_pnt_line_joint_rnt(df: pd.DataFrame, q=1, x='Runtime', h='comb_key', io
         style=h,
         col="test data",
         col_order=["DK", "GDA", "SYNT"],
+        markers=True,
+        sort=True,
+    )
+    if q == 7: # only this one makes sense!!!!!!!!!!!!!!!!!!!
+        return sns.relplot(
+        data=plot_df.sort_values(by='phase'),
+        kind="line",
+        x="Runtime",
+        y="iou",
+        hue=h,
+        hue_order=ho.sort(),
+        style=h,
+        col="test data",
+        col_order=["DK", "GDA", "SYNT"],
+        row='s_lvl',
         markers=True,
         sort=True,
     )
@@ -600,25 +618,25 @@ def mn_joint():
     df['3_cum_Runtime'] = df['Runtime'] + df['2_cum_Runtime']
     # bar plot Runtime - phase - comb_key
     df_org = df.copy()
-    for t in range(0, 6):
-        df = df_org[df_org['s_lvl'] == t]
-        if df.empty:
-            print(t, 'empty')
-            continue
-        print('s in comb_key', t)
-        # for qqq in range(6):
-        for qqq in [6]:
-            g = plot_pnt_line_joint_rnt(df, qqq)
-            # g.limi
-            if SAVING:
-                fn = '_'.join(['joint', str(qqq), 'comb_key', f's_lvl={t}'])
-                g.savefig(f'{DIR}/{fn}')
-                print('saved', fn)
-                plt.close()
-            else:
-                plt.show()
+    # for t in range(0, 6):
+    #     df = df_org[df_org['s_lvl'] == t]
+    #     if df.empty:
+    #         print(t, 'empty')
+    #         continue
+    #     print('s in comb_key', t)
+    #     # for qqq in range(6):
+    #     for qqq in [6]:
+    #         g = plot_pnt_line_joint_rnt(df, qqq)
+    #         # g.limi
+    #         if SAVING:
+    #             fn = '_'.join(['joint', str(qqq), 'comb_key', f's_lvl={t}'])
+    #             g.savefig(f'{DIR}/{fn}')
+    #             print('saved', fn)
+    #             plt.close()
+    #         else:
+    #             plt.show()
     for t in ['all']:
-        for qqq in [6]:
+        for qqq in [7]:
             g = plot_pnt_line_joint_rnt(df_org, qqq)
             if SAVING:
                 fn = '_'.join(['joint', str(qqq), 'comb_key', f's_lvl={t}'])

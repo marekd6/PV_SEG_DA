@@ -520,35 +520,35 @@ def plot_pnt_line_joint_rnt(df: pd.DataFrame, q=1, x='Runtime', h='comb_key', io
     print(len(ho), 'hos')
     if q == 4:
         return sns.relplot(
-        data=df_long.sort_values(by='phase'),
-        kind="line",
-        x="Runtime",
-        y="iou",
-        hue=h,
-        style=h,
-        hue_order=ho.sort(),
-        col="test data",
-        col_order=["DK", "GDA", "SYNT"],
-        markers=True,
-        estimator="mean",
-        errorbar=("ci", 95),
-        sort=True,
-    )
+            data=df_long.sort_values(by='phase'),
+            kind="line",
+            x="Runtime",
+            y="iou",
+            hue=h,
+            style=h,
+            hue_order=ho.sort(),
+            col="test data",
+            col_order=["DK", "GDA", "SYNT"],
+            markers=True,
+            estimator="mean",
+            errorbar=("ci", 95),
+            sort=True,
+        )
     plot_df = df_long.groupby(by=[h, 'test data', 'phase'], as_index=False).agg(iou=('iou', 'mean'), Runtime=('Runtime', 'mean'))
     if q == 5:
         return sns.relplot(
-        data=plot_df.sort_values(by='phase'),
-        kind="line",
-        x="Runtime",
-        y="iou",
-        hue=h,
-        hue_order=ho.sort(),
-        style=h,
-        col="test data",
-        col_order=["DK", "GDA", "SYNT"],
-        markers=True,
-        sort=True,
-    )
+            data=plot_df.sort_values(by='phase'),
+            kind="line",
+            x="Runtime",
+            y="iou",
+            hue=h,
+            hue_order=ho.sort(),
+            style=h,
+            col="test data",
+            col_order=["DK", "GDA", "SYNT"],
+            markers=True,
+            sort=True,
+        )
     # plot_df = df_long.groupby(by=[h, 'phase'], as_index=False).agg(iou=('iou', 'mean'), Runtime=('Runtime', 'mean'))
     # plot_df_iou = df_long.groupby(by=[h, 'phase', 'test data'], as_index=False).agg(iou=('iou', 'mean')) # IoU by ph, data, key
     # plot_df_runtime = df_long.groupby(by=[h, 'phase'], as_index=False).agg(Runtime=('Runtime', 'mean')) # time by ph, key
@@ -564,33 +564,105 @@ def plot_pnt_line_joint_rnt(df: pd.DataFrame, q=1, x='Runtime', h='comb_key', io
     # print(plot_df.head())
     if q == 6: # only this one makes sense!!!!!!!!!!!!!!!!!!!
         return sns.relplot(
-        data=plot_df.sort_values(by='phase'),
-        kind="line",
-        x="Runtime",
-        y="iou",
-        hue=h,
-        hue_order=ho.sort(),
-        style=h,
-        col="test data",
-        col_order=["DK", "GDA", "SYNT"],
-        markers=True,
-        sort=True,
-    )
+            data=plot_df.sort_values(by='phase'),
+            kind="line",
+            x="Runtime",
+            y="iou",
+            hue=h,
+            hue_order=ho.sort(),
+            style=h,
+            col="test data",
+            col_order=["DK", "GDA", "SYNT"],
+            markers=True,
+            sort=True,
+        )
     if q == 7: # only this one makes sense!!!!!!!!!!!!!!!!!!!
         return sns.relplot(
-        data=plot_df.sort_values(by='phase'),
-        kind="line",
-        x="Runtime",
-        y="iou",
-        hue=h,
-        hue_order=ho.sort(),
-        style=h,
-        col="test data",
-        col_order=["DK", "GDA", "SYNT"],
-        row='s_lvl',
-        markers=True,
-        sort=True,
-    )
+            data=plot_df.sort_values(by='phase'),
+            kind="line",
+            x="Runtime",
+            y="iou",
+            hue=h,
+            hue_order=ho.sort(),
+            style=h,
+            col="test data",
+            col_order=["DK", "GDA", "SYNT"],
+            row='s_lvl',
+            markers=True,
+            sort=True,
+        )
+    if q == 9: # exp 8,9
+        return sns.relplot(
+            data=plot_df.sort_values(by='phase'),
+            kind="line",
+            x="Runtime",
+            y="iou",
+            hue=h,
+            hue_order=ho.sort(),
+            # style='phase',
+            style=h,
+            col="test data",
+            col_order=["DK", "GDA", "SYNT"],
+            row='s_lvl',
+            markers=True,
+            sort=True,
+            palette=sns.color_palette(),
+        )
+    if q == 10: # exp swap r-c
+        return sns.relplot(
+            data=plot_df.sort_values(by='phase'),
+            kind="line",
+            x="Runtime",
+            y="iou",
+            hue=h,
+            hue_order=ho.sort(),
+            # style='phase',
+            style=h,
+            row="test data",
+            row_order=["DK", "GDA", "SYNT"],
+            col='s_lvl',
+            markers=True,
+            sort=True,
+            palette=sns.color_palette(),
+        )
+    if q == 11: # exp swap r-c, ho
+        return sns.relplot(
+            data=plot_df.sort_values(by='phase'),
+            kind="line",
+            x="Runtime",
+            y="iou",
+            hue=h,
+            hue_order=sorted(ho, key=lambda x: str(x).count('s')),
+            # style='phase',
+            style=h,
+            row="test data",
+            row_order=["DK", "GDA", "SYNT"],
+            col='s_lvl',
+            markers=True,
+            sort=True,
+            palette=sns.color_palette(),
+        )
+    if q == 12: # exp swap r-c, ho, leg
+        g = sns.relplot(
+            data=plot_df.sort_values(by='phase'),
+            kind="line",
+            x="Runtime",
+            y="iou",
+            hue=h,
+            hue_order=sorted(ho, key=lambda x: str(x).count('s')),
+            # style='phase',
+            style=h,
+            row="test data",
+            row_order=["DK", "GDA", "SYNT"],
+            col='s_lvl',
+            markers=True,
+            sort=True,
+            palette=sns.color_palette(),
+        )
+        for (i, j, k), dt in g.facet_data():
+            # (g.axes[i, j]).add_legend()
+            sns.move_legend(g.axes[i, j], loc='right')
+        return g
     return sns.relplot(
         data=plot_df.sort_values(by='phase'),
         kind="line",
@@ -636,7 +708,7 @@ def mn_joint():
     #         else:
     #             plt.show()
     for t in ['all']:
-        for qqq in [7]:
+        for qqq in [12]:
             g = plot_pnt_line_joint_rnt(df_org, qqq)
             if SAVING:
                 fn = '_'.join(['joint', str(qqq), 'comb_key', f's_lvl={t}'])

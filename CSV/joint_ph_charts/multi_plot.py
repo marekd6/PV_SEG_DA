@@ -1,9 +1,11 @@
 import pandas as pd
-# import matplotlib
-# matplotlib.use('Agg') # Forces non-interactive file-rendering backend
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+
+SAVING = True
 
 IOU_COLS_GDA = ["3_test_GDA_iou", "3_test/GDA/iou", "1_test/GDA/iou",  
                 "2_test/GDA/iou", "1_test_GDA_iou", "2_test_GDA_iou"]
@@ -363,10 +365,10 @@ CHARTS2 = { # double split: gda in 1 vs no gda in 1
     'rot9_bar_trg_ph_nov': rot9_bar_trg_ph_nov, # rot, CI no h
 }
 
-CHARTS2 = { # double split: gda in 1 vs no gda in 1
-    'bar3_ph_by_trg_h': bar3_ph_by_trg_h,
-    # 'pnt_line3_ph_by_trg_h': pnt_line3_ph_by_trg_h, # only by comb_key
-}
+# CHARTS2 = { # double split: gda in 1 vs no gda in 1
+#     'bar3_ph_by_trg_h': bar3_ph_by_trg_h,
+#     # 'pnt_line3_ph_by_trg_h': pnt_line3_ph_by_trg_h, # only by comb_key
+# }
 
 CHARTS = CHARTS1.copy()
 CHARTS.update(CHARTS2)
@@ -407,12 +409,13 @@ def plot_file_agg(f, group_key = 'comb_key', chart='rel'):
             print(e)
 
     plt.subplots_adjust(hspace=0.4, wspace=0.1)
-    plt.show()
-
-    # fn = '_'.join([f, stat, chart, group_key])
-    # plt.savefig(f'{SAVE_DIR}/{fn}')
-    # print('saved', fn)
-    # plt.close()
+    if SAVING:
+        fn = '_'.join([f, chart, group_key])
+        plt.savefig(f'{SAVE_DIR}/{fn}')
+        print('saved', fn)
+        plt.close()
+    else:
+        plt.show()
   
 
 def plot_file_raw(f, group_key = 'comb_key', chart='rel'):
@@ -425,9 +428,9 @@ def plot_file_raw(f, group_key = 'comb_key', chart='rel'):
     df_agg = df
     print(df_agg.size)
 
-    df_long = df_agg.melt(id_vars=[group_key], var_name='col_name', value_name='stat_mean')
-    df_long[['ph_nr', 'trg_var']] = df_long['col_name'].str.split('_', n=1, expand=True)
-    df_long['trg_var'] = df_long['trg_var'].str.split('_', expand=True)[1]
+    df_long = df_agg.melt(id_vars=[group_key], var_name='col_name', value_name='stat_mean') # 3_test_GDA_iou
+    df_long[['ph_nr', 'trg_var']] = df_long['col_name'].str.split('_', n=1, expand=True) # 3, test_GDA_iou
+    df_long['trg_var'] = df_long['trg_var'].str.split('_', expand=True)[1] # GDA
     df_long['ph_nr'] = pd.to_numeric(df_long['ph_nr'], downcast='integer')
     if group_key == 'tr_val':
         df_long['gd'] = True
@@ -444,7 +447,7 @@ def plot_file_raw(f, group_key = 'comb_key', chart='rel'):
             df_long = df_long_org[df_long_org['gd'] == t]
         if df_long.empty:
             continue
-        print('gda in ph1', t)
+        print('gda in ph', t)
 
         sns.set_theme(style="whitegrid")
         g = CHARTS[chart](df_long, group_key)
@@ -465,12 +468,13 @@ def plot_file_raw(f, group_key = 'comb_key', chart='rel'):
         #         print(e)
 
         # plt.subplots_adjust(hspace=0.4, wspace=0.1)
-        plt.show()
-
-        # fn = '_'.join([f, stat, chart, group_key])
-        # plt.savefig(f'{SAVE_DIR}/{fn}')
-        # print('saved', fn)
-        # plt.close()
+        if SAVING:
+            fn = '_'.join([f, chart, group_key, f'gda_used={t}'])
+            plt.savefig(f'{SAVE_DIR}/{fn}')
+            print('saved', fn)
+            plt.close()
+        else:
+            plt.show()
 
 
 # def plot_joint_phases(keys=['comb_key'], f=f'{SAVE_DIR}/ph123b.csv'):
@@ -505,5 +509,5 @@ if __name__ == '__main__':
     # p1()
     # plot_concat_phases()   
     # plot_file() # not at all
-    # plot_file(fu=plot_file_raw, f='concat', keys=['tr_val'])               
+    plot_file(fu=plot_file_raw, f='concat', keys=['tr_val'])               
     plot_file(fu=plot_file_raw)          

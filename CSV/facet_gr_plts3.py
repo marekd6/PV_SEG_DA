@@ -1,13 +1,16 @@
 import pandas as pd
 import seaborn as sns
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import re
 
+
+SAVING = True
+DIR = 'CSV/joint_ph_charts/modf_rntg2'
+
+
 def _melt_for_facets(df: pd.DataFrame, x_var: str, y_vars: list, hue_var: str) -> pd.DataFrame:
-    """
-    Helper function to transform multiple Y variables into a long format 
-    suitable for Seaborn faceting.
-    """
     id_vars = [x_var]
     if hue_var:
         id_vars.append(hue_var)
@@ -21,10 +24,8 @@ def _melt_for_facets(df: pd.DataFrame, x_var: str, y_vars: list, hue_var: str) -
         value_name='y_value'
     )
 
+
 def plot_grouped_boxplot(df: pd.DataFrame, x_var: str, y_vars: list, hue_var, col_wrap: int = 3):
-    """
-    Draws multi-facet grouped bivariate box plots to show distributions.
-    """
     long_df = _melt_for_facets(df, x_var, y_vars, hue_var)
     
     g = sns.catplot(
@@ -35,24 +36,19 @@ def plot_grouped_boxplot(df: pd.DataFrame, x_var: str, y_vars: list, hue_var, co
         col='facet_var',
         kind='box',
         col_wrap=col_wrap,
-        # sharey=False,          # Set to False to allow independent Y-axis scales
+        # sharey=False,  
         # height=4,
         # aspect=0.5
-        legend='full',
-        legend_out=True,
+        # legend='full',
+        # legend_out=True,
     )
     
     g.set_titles("{col_name}")
     g.set_axis_labels(x_var, "IoU")
-    # plt.tight_layout()
-    plt.show()
-    # return g
+    return g
+
 
 def plot_grouped_violinplot(df: pd.DataFrame, x_var: str, y_vars: list, hue_var: str, col_wrap: int = 3, split: bool = False):
-    """
-    Draws multi-facet grouped bivariate violin plots to show density distributions.
-    Set split=True if hue_var has exactly two levels to draw split violins.
-    """
     long_df = _melt_for_facets(df, x_var, y_vars, hue_var)
     
     g = sns.catplot(
@@ -62,8 +58,8 @@ def plot_grouped_violinplot(df: pd.DataFrame, x_var: str, y_vars: list, hue_var:
         hue=hue_var,
         col='facet_var',
         kind='violin',
-        split=split,           # Useful for binary hue variables
-        # inner='quartile',      # Shows quartiles inside the violin
+        split=split,           # binary hue var
+        # inner='quartile',  
         col_wrap=col_wrap,
         # sharey=False,
         # height=4,
@@ -74,14 +70,10 @@ def plot_grouped_violinplot(df: pd.DataFrame, x_var: str, y_vars: list, hue_var:
     
     g.set_titles("{col_name}")
     g.set_axis_labels(x_var, "Value")
-    # plt.tight_layout()
-    plt.show()
     return g
 
+
 def plot_grouped_barplot(df: pd.DataFrame, x_var: str, y_vars: list, hue_var, col_wrap: int = 3):
-    """
-    Draws multi-facet grouped bivariate bar plots to show the mean and 95% CI.
-    """
     long_df = _melt_for_facets(df, x_var, y_vars, hue_var)
     
     g = sns.catplot(
@@ -100,16 +92,10 @@ def plot_grouped_barplot(df: pd.DataFrame, x_var: str, y_vars: list, hue_var, co
     
     g.set_titles("{col_name}")
     g.set_axis_labels(x_var, "Mean Value")
-    # plt.tight_layout()
-    plt.show()
     return g
 
 
 def _prepare_and_melt(df: pd.DataFrame, x_var: str, y_vars: list, hue_var, bins: int) -> tuple:
-    """
-    Bins the continuous X variable and melts multiple Y variables into long format.
-    Returns the melted DataFrame and the name of the new binned X column.
-    """
     data = df.copy()
     
     # Create the binned X variable
@@ -133,7 +119,6 @@ def _prepare_and_melt(df: pd.DataFrame, x_var: str, y_vars: list, hue_var, bins:
 
 
 def plot_binned_grouped_boxplot(df: pd.DataFrame, x_var: str, y_vars: list, hue_var, bins: int = 5, col_wrap: int = 3):
-    """Draws multi-facet grouped box plots across binned X values."""
     long_df, x_plot_var = _prepare_and_melt(df, x_var, y_vars, hue_var, bins)
     
     g = sns.catplot(
@@ -151,14 +136,11 @@ def plot_binned_grouped_boxplot(df: pd.DataFrame, x_var: str, y_vars: list, hue_
     
     g.set_titles("{col_name}")
     g.set_axis_labels(f"{x_var} (Binned)", "Value")
-    g.set_xticklabels(rotation=45, ha='right') # Essential for binned labels
-    plt.tight_layout()
-    plt.show()
+    g.set_xticklabels(rotation=45, ha='right')
     return g
 
 
 def plot_binned_grouped_violinplot(df: pd.DataFrame, x_var: str, y_vars: list, hue_var, bins: int = 5, col_wrap: int = 3, split: bool = False):
-    """Draws multi-facet grouped violin plots across binned X values."""
     long_df, x_plot_var = _prepare_and_melt(df, x_var, y_vars, hue_var, bins)
     
     g = sns.catplot(
@@ -179,13 +161,10 @@ def plot_binned_grouped_violinplot(df: pd.DataFrame, x_var: str, y_vars: list, h
     g.set_titles("{col_name}")
     g.set_axis_labels(f"{x_var} (Binned)", "Value")
     g.set_xticklabels(rotation=45, ha='right')
-    plt.tight_layout()
-    plt.show()
     return g
 
 
 def plot_binned_grouped_barplot(df: pd.DataFrame, x_var: str, y_vars: list, hue_var, bins: int = 5, col_wrap: int = 3):
-    """Draws multi-facet grouped bar plots (Mean + 95% CI) across binned X values."""
     long_df, x_plot_var = _prepare_and_melt(df, x_var, y_vars, hue_var, bins)
     
     g = sns.catplot(
@@ -205,15 +184,10 @@ def plot_binned_grouped_barplot(df: pd.DataFrame, x_var: str, y_vars: list, hue_
     g.set_titles("{col_name}")
     g.set_axis_labels(f"{x_var} (Binned)", "Mean Value")
     # g.set_xticklabels(rotation=45, ha='right')
-    plt.tight_layout()
-    plt.show()
     return g
 
 
 def plot_grouped_stripp(df: pd.DataFrame, x_var: str, y_vars: list, hue_var, col_wrap: int = 3):
-    """
-    Draws multi-facet grouped bivariate box plots to show distributions.
-    """
     long_df = _melt_for_facets(df, x_var, y_vars, hue_var)
     
     g = sns.stripplot(
@@ -231,9 +205,8 @@ def plot_grouped_stripp(df: pd.DataFrame, x_var: str, y_vars: list, hue_var, col
     
     # g.set_titles("{col_name}")
     # g.set_axis_labels(x_var, "IoU")
-    plt.tight_layout()
-    plt.show()
-    # return g
+    return g
+
 
 IOU_COLS_GDA = sorted(["3_test_GDA_iou", "1_test_GDA_iou", "2_test_GDA_iou"])
 IOU_COLS_SYNT = sorted(["3_test_SYNT_iou", "1_test_SYNT_iou", "2_test_SYNT_iou"])
@@ -245,6 +218,7 @@ IOU_COLS1 = IOU_COLS_SO[:3]
 IOU_COLS2 = IOU_COLS_SO[3:6]
 IOU_COLS3 = IOU_COLS_SO[6:]
 IOU123 = [IOU_COLS1, IOU_COLS2, IOU_COLS3]
+
 
 def by_ph_scen_ema_trval(df):
     plot_grouped_barplot(
@@ -267,6 +241,7 @@ def by_ph_scen_ema_trval(df):
         hue_var='tr_val'
     )
 
+
 def by_ph_scen_trval_ema(df):
     plot_grouped_barplot(
         df=df,
@@ -287,6 +262,7 @@ def by_ph_scen_trval_ema(df):
         y_vars=IOU_COLS3,
         hue_var='ema'
     )
+
 
 def by_ph_scen_trval_bs(df):
     plot_grouped_barplot(
@@ -310,19 +286,19 @@ def by_ph_scen_trval_bs(df):
     )
 
 
-def q(df, x, h, ious=IOU123, fff=plot_grouped_barplot):
+def q(df, x, h, ious=IOU123, fff=plot_grouped_barplot, t='all'):
     for iou in ious:
-        fff(df, x, iou, h)
+        g = fff(df, x, iou, h)
+        if SAVING:
+            fn = '_'.join(['joint', x, str(h), str(iou), f's_lvl={t}', str(fff.__name__)])
+            g.savefig(f'{DIR}/{fn}')
+            print('saved', fn)
+            plt.close()
+        else:
+            plt.show()
 
 
 def hists(df: pd.DataFrame, ious=IOU_COLS, h='tr_val'):
-    # df = pd.melt(
-    #     df,
-    #     # id_vars=id_vars,
-    #     value_vars=ious,
-    #     var_name='facet_var',
-    #     value_name='y_value'
-    # )
     df_long = df.melt(id_vars=[h], value_vars=ious, var_name='ph_trg', value_name='iou') # 3_test_GDA_iou
     df_long[['phase', 'test data']] = df_long['ph_trg'].str.split('_', n=1, expand=True)
     df_long['test data'] = df_long['test data'].str.split('_', expand=True)[1]
@@ -390,24 +366,23 @@ def hists2d(df: pd.DataFrame, the_snd, ious=IOU_COLS, h: str | None ='tr_val'):
     plt.show()
 
 
-def valid(df):
-    # q(df, 'ema', 'tr_val')
-    # q(df, 'ema', 'tr_val', fff=plot_grouped_boxplot)
-    q(df, 'ema', 'tr_val', fff=plot_grouped_violinplot)
+def valid(df, t):
+    # q(df, 'ema', 'tr_val', t=t) # saved
+    q(df, 'ema', 'tr_val', fff=plot_grouped_boxplot, t=t) # err
+    q(df, 'ema', 'tr_val', fff=plot_grouped_violinplot, t=t)
     # hists(df)
     # hists2d(df, 'Runtime')
     # hists2d(df, 'Runtime', h=None)
 
 
 def mn():
-    fff = 'CSV/joint_ph_charts/modf_rntg2/cnc123b.csv'
-
+    fff = f'{DIR}/cnc123b.csv'
     df = pd.read_csv(fff)
-    # valid(df)
+    valid(df, 'all')
     # TODO splt by gda lvl or sth else (gda, dk, s)
     df['s_lvl'] = ['s' in x for x in df['train']]
     for t in [True, False]:
-        valid(df[df['s_lvl'] == t])
+        valid(df[df['s_lvl'] == t], t)
 
     # by_ph_scen_trval_ema(df) # ok, deprec by q
     # by_ph_scen_ema_trval(df)
@@ -456,9 +431,6 @@ def mn():
     #     # hue_var=None
     # )
 
-
-
-
     # sns.stripplot(
     #     data=df,
     #     x='Runtime',
@@ -469,9 +441,6 @@ def mn():
     # )
     # plt.show()
 
-
-
-
     # plot_grouped_boxplot(
     #     df=df,
     #     x_var='Runtime',
@@ -480,9 +449,8 @@ def mn():
     #     # hue_var=None
     # )
 
-RNTMS = ['1_cum_Runtime', '2_cum_Runtime', '3_cum_Runtime']
 
-g = IOU_COLS_SYNT
+RNTMS = ['1_cum_Runtime', '2_cum_Runtime', '3_cum_Runtime']
 
 def rename_column(col):
     # Match: phase_test_SET_t
@@ -501,59 +469,64 @@ def rename_column(col):
     return col
 
 
-def plot_pnt_line_joint_rnt(df: pd.DataFrame, x='Runtime', h='comb_key', ious=IOU_COLS, rntms=RNTMS):
+def plot_pnt_line_joint_rnt(df: pd.DataFrame, q=1, x='Runtime', h='comb_key', ious=IOU_COLS, rntms=RNTMS):
     df = df.rename(columns=rename_column)
     df = df.drop(columns=['Runtime'])
     df = df.reset_index(names="row_id")
-    print(df.columns)
+    # print(df.columns)
     df_long = (pd.wide_to_long(df, stubnames=['iou_SYNT', 'iou_GDA', 'iou_DK', 'Runtime'], i=['row_id', h], j='phase', sep='_', suffix=r"\d+")).reset_index()
     # df_long = (pd.wide_to_long(df, stubnames=['iou_SYNT', 'iou_GDA', 'iou_DK', 'Runtime'], i=[h], j='ph', sep='_', suffix=r"\d+")).reset_index()
-    print(df_long.columns)
-    print(df_long.head(10))
+    # print(df_long.columns)
+    # print(df_long.head(10))
     df_long = pd.melt(df_long, id_vars=[h, 'phase', 'Runtime'], value_vars=['iou_SYNT', 'iou_GDA', 'iou_DK'], var_name='test data', value_name='iou')
     df_long['test data'] = df_long['test data'].str.replace('iou_', '')
-    print(df_long.columns)
-    print(df_long.head(10))
+    # print(df_long.columns)
+    # print(df_long.head(10))
     # df_long = df_long.head(444)
-
-    # sns.displot(
-    #     data=df_long,
-    #     x="Runtime",
-    #     y="iou",
-    #     hue=h,
-    #     col="test data",
-    #     col_order=["DK", "GDA", "SYNT"],
-    #     log_scale=(True, False),
-    # )
+    if q == 1:
+        return sns.displot(
+            data=df_long,
+            x="Runtime",
+            y="iou",
+            hue=h,
+            col="test data",
+            col_order=["DK", "GDA", "SYNT"],
+            log_scale=(True, False),
+        )
     df_long = df_long.reset_index()
-    # sns.catplot(
-    #     data=df_long,
-    #     kind="point",
-    #     x="Runtime",
-    #     y="iou",
-    #     hue=h,
-    #     col="test data",
-    #     col_order=["DK", "GDA", "SYNT"],
-    #     estimator='mean',
-    # )
-    # sns.relplot(
-    #     data=df_long,
-    #     x="Runtime",
-    #     y="iou",
-    #     hue=h,
-    #     style='phase',
-    #     col="test data",
-    #     col_order=["DK", "GDA", "SYNT"],
-    # )
-    ho = df_long[h].unique().sort()
-    sns.relplot(
+    if q == 2:
+        return sns.catplot(
+            data=df_long,
+            kind="point",
+            x="Runtime",
+            y="iou",
+            hue=h,
+            col="test data",
+            col_order=["DK", "GDA", "SYNT"],
+            estimator='mean',
+        )
+    if q == 3:
+        return sns.relplot(
+            data=df_long,
+            x="Runtime",
+            y="iou",
+            hue=h,
+            style='phase',
+            col="test data",
+            col_order=["DK", "GDA", "SYNT"],
+        )
+    ho = df_long[h].unique()
+    ho.sort()
+    print(len(ho), 'hos')
+    if q == 4:
+        return sns.relplot(
         data=df_long.sort_values(by='phase'),
         kind="line",
         x="Runtime",
         y="iou",
         hue=h,
         style=h,
-        hue_order=ho,
+        hue_order=ho.sort(),
         col="test data",
         col_order=["DK", "GDA", "SYNT"],
         markers=True,
@@ -562,7 +535,45 @@ def plot_pnt_line_joint_rnt(df: pd.DataFrame, x='Runtime', h='comb_key', ious=IO
         sort=True,
     )
     plot_df = df_long.groupby(by=[h, 'test data', 'phase'], as_index=False).agg(iou=('iou', 'mean'), Runtime=('Runtime', 'mean'))
-    sns.relplot(
+    if q == 5:
+        return sns.relplot(
+        data=plot_df.sort_values(by='phase'),
+        kind="line",
+        x="Runtime",
+        y="iou",
+        hue=h,
+        hue_order=ho.sort(),
+        style=h,
+        col="test data",
+        col_order=["DK", "GDA", "SYNT"],
+        markers=True,
+        sort=True,
+    )
+    # plot_df = df_long.groupby(by=[h, 'phase'], as_index=False).agg(iou=('iou', 'mean'), Runtime=('Runtime', 'mean'))
+    plot_df_iou = df_long.groupby(by=[h, 'phase', 'test data'], as_index=False).agg(iou=('iou', 'mean')) # IoU by ph, data, key
+    plot_df_runtime = df_long.groupby(by=[h, 'phase'], as_index=False).agg(Runtime=('Runtime', 'mean')) # time by ph, key
+    # print(plot_df_iou.columns)
+    # print(plot_df_runtime.columns)
+    # print(plot_df_iou.head())
+    # print(plot_df_runtime.head())
+    plot_df = pd.merge(left=plot_df_iou, right=plot_df_runtime, on=[h, 'phase'])
+    # print(plot_df.columns)
+    # print(plot_df.head())
+    if q == 6: # only this one makes sense!!!!!!!!!!!!!!!!!!!
+        return sns.relplot(
+        data=plot_df.sort_values(by='phase'),
+        kind="line",
+        x="Runtime",
+        y="iou",
+        hue=h,
+        hue_order=ho.sort(),
+        style=h,
+        col="test data",
+        col_order=["DK", "GDA", "SYNT"],
+        markers=True,
+        sort=True,
+    )
+    return sns.relplot(
         data=plot_df.sort_values(by='phase'),
         kind="line",
         x="Runtime",
@@ -575,11 +586,10 @@ def plot_pnt_line_joint_rnt(df: pd.DataFrame, x='Runtime', h='comb_key', ious=IO
         markers=True,
         sort=True,
     )
-    plt.show()
 
 
 def mn_joint():
-    fff = 'CSV/joint_ph_charts/modf_rntg2/ph123b.csv'
+    fff = f'{DIR}/ph123b.csv'
     df = pd.read_csv(fff)
     # TODO splt by gda lvl or sth else (gda, dk, s)
     # df['s_lvl'] = ['s' in x for x in df['train']]
@@ -593,10 +603,30 @@ def mn_joint():
     for t in range(0, 6):
         df = df_org[df_org['s_lvl'] == t]
         if df.empty:
+            print(t, 'empty')
             continue
         print('s in comb_key', t)
-        plot_pnt_line_joint_rnt(df)
-        break
+        # for qqq in range(6):
+        for qqq in [6]:
+            g = plot_pnt_line_joint_rnt(df, qqq)
+            # g.limi
+            if SAVING:
+                fn = '_'.join(['joint', str(qqq), 'comb_key', f's_lvl={t}'])
+                g.savefig(f'{DIR}/{fn}')
+                print('saved', fn)
+                plt.close()
+            else:
+                plt.show()
+    for t in ['all']:
+        for qqq in [6]:
+            g = plot_pnt_line_joint_rnt(df_org, qqq)
+            if SAVING:
+                fn = '_'.join(['joint', str(qqq), 'comb_key', f's_lvl={t}'])
+                g.savefig(f'{DIR}/{fn}')
+                print('saved', fn)
+                plt.close()
+            else:
+                plt.show()
 
 
 if __name__ == '__main__':

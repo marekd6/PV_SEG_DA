@@ -1,6 +1,7 @@
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import re
 
 def _melt_for_facets(df: pd.DataFrame, x_var: str, y_vars: list, hue_var: str) -> pd.DataFrame:
     """
@@ -481,48 +482,121 @@ def mn():
 
 RNTMS = ['1_cum_Runtime', '2_cum_Runtime', '3_cum_Runtime']
 
-def plot_pnt_line_joint_rnt(df: pd.DataFrame, x='Runtime', h='comb_key', ious=IOU_COLS, rntms=RNTMS):
-    df_long = df.melt(id_vars=[h]+RNTMS, value_vars=ious, var_name='ph_trg', value_name='iou') # 3_test_GDA_iou
-    print(df_long.columns)
-    print(df_long.head())
-    # df_long = df_long.melt(id_vars=[h, 'ph_trg', 'iou'], value_vars=rntms, var_name='ph_rnt', value_name='rnt') # 3_cum_Runtime
-    df_long[['phase', 'test data']] = df_long['ph_trg'].str.split('_', n=1, expand=True) # 3, test_GDA_iou
-    df_long['test data'] = df_long['test data'].str.split('_', expand=True)[1] # GDA
-    df_long = df_long.melt(id_vars=[h, 'phase', 'iou', 'test data'], value_vars=rntms, var_name='ph_rnt', value_name='runtime') # 3_cum_Runtime
-    df_long[['phase', 'rrr']] = df_long['ph_rnt'].str.split('_', n=1, expand=True) # 3, cum_Runtime
-    # df_long['test data'] = df_long['test data'].str.split('_', expand=True)[1] # GDA
-    # df_long['phase'] = pd.to_numeric(df_long['phase'], downcast='integer')
-    print(df_long.columns)
-    print(df_long.head())
+g = IOU_COLS_SYNT
 
-    sns.catplot(
+def rename_column(col):
+    # Match: phase_test_SET_t
+    m = re.match(r"(\d+)_test_([A-Z]+)_iou$", col)
+    if m:
+        phase, set_name = m.groups()
+        return f"iou_{set_name}_{phase}"
+
+    # Match: phase_cum_m
+    m = re.match(r"(\d+)_cum_Runtime$", col)
+    if m:
+        phase = m.group(1)
+        return f"Runtime_{phase}"
+
+    # Leave other columns unchanged (e.g. key)
+    return col
+
+
+def plot_pnt_line_joint_rnt(df: pd.DataFrame, x='Runtime', h='comb_key', ious=IOU_COLS, rntms=RNTMS):
+    df = df.rename(columns=rename_column)
+    df = df.drop(columns=['Runtime'])
+    df = df.reset_index(names="row_id")
+    print(df.columns)
+    df_long = (pd.wide_to_long(df, stubnames=['iou_SYNT', 'iou_GDA', 'iou_DK', 'Runtime'], i=['row_id', h], j='phase', sep='_', suffix=r"\d+")).reset_index()
+    # df_long = (pd.wide_to_long(df, stubnames=['iou_SYNT', 'iou_GDA', 'iou_DK', 'Runtime'], i=[h], j='ph', sep='_', suffix=r"\d+")).reset_index()
+    print(df_long.columns)
+    print(df_long.head(10))
+    df_long = pd.melt(df_long, id_vars=[h, 'phase', 'Runtime'], value_vars=['iou_SYNT', 'iou_GDA', 'iou_DK'], var_name='test data', value_name='iou')
+    df_long['test data'] = df_long['test data'].str.replace('iou_', '')
+    print(df_long.columns)
+    print(df_long.head(10))
+    # df_long = df_long.head(444)
+
     # sns.displot(
-        data=df_long,
-        kind="point",
-        # x="phase",
-        x="runtime",
+    #     data=df_long,
+    #     x="Runtime",
+    #     y="iou",
+    #     hue=h,
+    #     col="test data",
+    #     col_order=["DK", "GDA", "SYNT"],
+    #     log_scale=(True, False),
+    # )
+    df_long = df_long.reset_index()
+    # sns.catplot(
+    #     data=df_long,
+    #     kind="point",
+    #     x="Runtime",
+    #     y="iou",
+    #     hue=h,
+    #     col="test data",
+    #     col_order=["DK", "GDA", "SYNT"],
+    #     estimator='mean',
+    # )
+    # sns.relplot(
+    #     data=df_long,
+    #     x="Runtime",
+    #     y="iou",
+    #     hue=h,
+    #     style='phase',
+    #     col="test data",
+    #     col_order=["DK", "GDA", "SYNT"],
+    # )
+    ho = df_long[h].unique().sort()
+    sns.relplot(
+        data=df_long.sort_values(by='phase'),
+        kind="line",
+        x="Runtime",
         y="iou",
         hue=h,
+        style=h,
+        hue_order=ho,
         col="test data",
         col_order=["DK", "GDA", "SYNT"],
-        # aspect=0.5,
-        # sharey=shx,
+        markers=True,
+        estimator="mean",
+        errorbar=("ci", 95),
+        sort=True,
     )
-    plt.plot()
+    plot_df = df_long.groupby(by=[h, 'test data', 'phase'], as_index=False).agg(iou=('iou', 'mean'), Runtime=('Runtime', 'mean'))
+    sns.relplot(
+        data=plot_df.sort_values(by='phase'),
+        kind="line",
+        x="Runtime",
+        y="iou",
+        hue=h,
+        hue_order=ho,
+        style=h,
+        col="test data",
+        col_order=["DK", "GDA", "SYNT"],
+        markers=True,
+        sort=True,
+    )
+    plt.show()
 
 
 def mn_joint():
     fff = 'CSV/joint_ph_charts/modf_rntg2/ph123b.csv'
     df = pd.read_csv(fff)
     # TODO splt by gda lvl or sth else (gda, dk, s)
-    df['s_lvl'] = ['s' in x for x in df['train']]
-    # for t in [True, False]:
-    #     valid(df[df['s_lvl'] == t])
+    # df['s_lvl'] = ['s' in x for x in df['train']]
+    df['s_lvl'] = [x.count('s') for x in df['comb_key']]
+
     df['1_cum_Runtime'] = df['Runtime_x']
     df['2_cum_Runtime'] = df['Runtime_y'] + df['1_cum_Runtime']
     df['3_cum_Runtime'] = df['Runtime'] + df['2_cum_Runtime']
     # bar plot Runtime - phase - comb_key
-    plot_pnt_line_joint_rnt(df)
+    df_org = df.copy()
+    for t in range(0, 6):
+        df = df_org[df_org['s_lvl'] == t]
+        if df.empty:
+            continue
+        print('s in comb_key', t)
+        plot_pnt_line_joint_rnt(df)
+        break
 
 
 if __name__ == '__main__':

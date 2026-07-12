@@ -11,6 +11,7 @@ import seaborn as sns
 import re
 
 SAVING = True
+SAVING = False
 
 if SAVING:
     import matplotlib
@@ -118,6 +119,7 @@ def widen_phases(df: pd.DataFrame, x='phase', y='IoU', h='tr_val', f='test set')
     df[[x, f]] = df['col_name'].str.split('_', n=1, expand=True) # 3, test_GDA_iou
     df[f] = df[f].str.split('_', expand=True)[1] # GDA
     df[x] = pd.to_numeric(df[x], downcast='integer')
+    df = df.drop(columns=['col_name'])
     return df
 
 
@@ -205,14 +207,19 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, ch='
     )
 
 
-def plot_prod(g, x, y, h, bs=None):
+def plot_prod(g, x, y, h, t='', bs=None): # TODO title, labels
     '''
     labels, base lines
     '''
     if bs:
-        g.set(ylim=(0.35, 0.85))
+        # g.set(ylim=(0.35, 0.85))
         for ax, b in zip(g.axes.flatten(), bs):
             ax.axhline(b, ls='--')
+    # g.set_titles(row_template="{row_name}", col_template="{col_name}")
+    # g.set(title=t)
+    # g.set(title='IoUs by amount of gda in setups')
+    # g.set_titles("{col_name}")
+    # g.set_axis_labels(x, y)
     return g
 
 
@@ -235,50 +242,99 @@ def wall_time(df: pd.DataFrame):
     return g, df
 
 
-def sngl_ph_tr_val(df: pd.DataFrame):
+def sngl_ph_tr_val_bar(df: pd.DataFrame, t=''):
     '''
     x = 'phase'
     y = 'IoU'
     h = 'tr_val'
     col = 'test set'
+    ch = 'bar'
     '''
     x = 'phase'
     y = 'IoU'
     h = 'tr_val'
     col = 'test set'
     col_order = ["DK", "GDA", "SYNT"]
+    ch='bar'
     bs = [0.71, 0.617, 0.359]
     df = widen_phases(df, x, y, h, col)
-    g = cats(df, x, y, h, col, col_order, None, None, 'bar')
-    g = plot_prod(g, x, y, h, bs)
+    g = cats(df, x, y, h, col, col_order, ch=ch)
+    g = plot_prod(g, x, y, h, t=t, bs=bs)
+    return g, df
+
+
+def sngl_ph_tr_val_box(df: pd.DataFrame, t=''):
+    '''
+    x = 'phase'
+    y = 'IoU'
+    h = 'tr_val'
+    col = 'test set'
+    ch = 'box'
+    '''
+    x = 'phase'
+    y = 'IoU'
+    h = 'tr_val'
+    col = 'test set'
+    col_order = ["DK", "GDA", "SYNT"]
+    ch='box'
+    bs = [0.71, 0.617, 0.359]
+    df = widen_phases(df, x, y, h, col)
+    g = cats(df, x, y, h, col, col_order, ch=ch)
+    g = plot_prod(g, x, y, h, t=t, bs=bs)
+    return g, df
+    
+
+
+def sngl_ph_tr_val_violin(df: pd.DataFrame, t=''):
+    '''
+    x = 'phase'
+    y = 'IoU'
+    h = 'tr_val'
+    col = 'test set'
+    ch = 'violin'
+    '''
+    x = 'phase'
+    y = 'IoU'
+    h = 'tr_val'
+    col = 'test set'
+    col_order = ["DK", "GDA", "SYNT"]
+    ch='violin'
+    bs = [0.71, 0.617, 0.359]
+    df = widen_phases(df, x, y, h, col)
+    g = cats(df, x, y, h, col, col_order, ch=ch)
+    g = plot_prod(g, x, y, h, t=t, bs=bs)
     return g, df
     
 
 
 def run_catch(df: pd.DataFrame, pth_df, pth_plt, fff=wall_time):
     g, df = fff(df)
-    df.to_csv(pth_df)
     if SAVING:
-        g.savefig(pth_plt)
+        df.to_csv(SAVEDIR / pth_df)
+        g.savefig(SAVEDIR / pth_plt)
         g.close()
     else:
-        g.show()
+        print(df.columns)
+        print(df.head())
+        plt.show()
 
 
 CHARTS_JOINT = {
-    'wall_time': wall_time,
-    'sngl_ph_tr_val': sngl_ph_tr_val,
+    # 'wall_time': wall_time, # TODO data not ready yet
+    'sngl_ph_tr_val_bar': sngl_ph_tr_val_bar, # almost done: tr_val, no s100
+    'sngl_ph_tr_val_box': sngl_ph_tr_val_box, # almost done: tr_val, no s100
+    'sngl_ph_tr_val_violin': sngl_ph_tr_val_violin, # almost done: tr_val, no s100
 }
 
 
 def main():
-    ph123 = pd.read_csv(FILES['joint'])
-    # ph1 = pd.read_csv(FILES['ph1'])
+    # ph123 = pd.read_csv(FILES['joint'])
+    ph1 = pd.read_csv(FILES['ph1'])
     # ph2 = pd.read_csv(FILES['ph2'])
     # ph3 = pd.read_csv(FILES['ph3'])
 
-    for ch, ff in CHARTS_JOINT.items():
-        run_catch(ph123, ch, ch, ff)
+    for ch, ff in CHARTS_JOINT.items(): # TODO match FILE with CHARTS
+        run_catch(ph1, ch+'.csv', ch+'.png', ff) # TODO fname, title
 
 
 if __name__ == '__main__':

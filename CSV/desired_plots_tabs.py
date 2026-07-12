@@ -7,8 +7,11 @@ saving tabs & charts
 
 
 import pandas as pd
+import numpy as np
 import seaborn as sns
 import re
+import itertools
+import math
 
 SAVING = True
 SAVING = False
@@ -40,22 +43,48 @@ FILES = {
     'concat': f'{DIR}/cnc123b.csv',
 }
 
-
-DS_SIZES_TR = {
+DS_SIZES_TR = { # TODO
     's': 123,
     'dk': 789,
     'gda': 18,
 }
 
-DS_SIZES_VAL = {
+DS_SIZES_VAL = { # TODO
     's': 123,
     'dk': 789,
     'gda': 20,
 }
 
-S_SUB_SIZES = {
+S_SUB_SIZES = { # TODO
     'mix': 456,
     'composite': 546
+}
+
+DS_DOM_SIM = {
+    's': 0.75,
+    'sub': 0.75,
+    'gda': 1,
+    'dk': 0,
+    'm': 0.25,
+    'subm': 0.5,
+}
+
+DS_REAL = {
+    's': 0,
+    'sub': 0,
+    'gda': 1,
+    'dk': 1,
+    'm': 0.5,
+    'subm': 0.25,
+}
+
+DS_DOM_REAL = {
+    's': [0.75, 0],
+    'sub': [0.75, 0],
+    'gda': [1, 1],
+    'dk': [0, 1],
+    'm': [0.25, 0.5],
+    'subm': [0.5, 0.25],
 }
 
 RNTMS = ['1_cum_Runtime', '2_cum_Runtime', '3_cum_Runtime']
@@ -95,12 +124,55 @@ def process_workload(df: pd.DataFrame):
     pass
 
 
+def data_diversity_space():
+    for pt in DS_DOM_REAL.values():
+        print(math.dist(pt, [0 ,0]))
+    fff = list(zip(DS_DOM_REAL.values(), DS_DOM_REAL.keys()))
+    print(fff[0])
+    df = pd.DataFrame(DS_DOM_REAL.values(), columns=['domain', 'real'])
+    df['key'] = list(DS_DOM_REAL.keys())
+    df['d'] = [math.dist(pt, [0,0]) for pt in DS_DOM_REAL.values()]
+    df.set_index('key').sort_index()
+    print(df.head())
+    g = sns.scatterplot(df, x='real', y='domain', hue='key', size='d')
+    sns.move_legend(g, "upper left", bbox_to_anchor=(1, 1))
+
+    # sns.scatterplot(list(zip(DS_DOM_REAL.values(), DS_DOM_REAL.keys()))) # TODO
+    # # sns.scatterplot(data=list(DS_DOM_REAL.values()))
+    # plt.grid(visible=True, which='major')
+    plt.show()
+
+
+# def data_diversity_space():
+#     d = zip(DS_DOM_SIM.values(), DS_REAL.values())
+#     print(list(d))
+#     # d = itertools.product(DS_DOM_SIM.values(), DS_REAL.values())
+#     for pt in d:
+#         print(math.dist(pt, (0, 0)))
+#     d = zip(DS_DOM_SIM.values(), DS_REAL.values())
+#     # sns.scatterplot(data=zip(*d), hue=DS_DOM_SIM.keys())
+#     # sns.scatterplot(data=list(zip(*d, DS_DOM_SIM.keys())))
+#     sns.scatterplot(data=list(zip(*d)))
+#     plt.grid(visible=True, which='major')
+#     plt.show()
+
+
 def process_diversity(df: pd.DataFrame):
-    pass
+    zero = np.array([0, 0])
+    df[['d_dom1', 'd_real1']] = df['train_x'].map(DS_DOM_REAL).tolist() # val_x
+    df[['d_dom2', 'd_real2']] = df['train_y'].map(DS_DOM_REAL).tolist()
+    df[['d_dom3', 'd_real3']] = df['train'].map(DS_DOM_REAL).tolist()
+    df['d123inner'] = np.sqrt((df['d_dom1'] + df['d_dom2'] + df['d_dom3'] - zero[0])**2 + 
+                              (df['d_real1'] + df['d_real2'] + df['d_real3'] - zero[1])**2)
+    df['d123outer'] = np.sum([np.sqrt((df['d_dom1']- zero[0])**2 + (df['d_real1'] - zero[1])**2), 
+                          np.sqrt((df['d_dom2']- zero[0])**2 + (df['d_real2'] - zero[1])**2),
+                          np.sqrt((df['d_dom3']- zero[0])**2 + (df['d_real3'] - zero[1])**2)], axis=0)
+    df['ddiff'] = (df['d123outer'] - df['d123inner']) / df['d123inner'] * 100
+    print(df[['d123inner', 'd123outer', 'ddiff']].head())
 
 
 def widen_runtime(df: pd.DataFrame, h):
-    df = pd.melt(df, id_vars=[h, 's_lvl', 'phase', 'Runtime'], 
+    df = pd.melt(df, id_vars=[h, 's_lvl', 'phase', 'Runtime'], # TODO s_lvl
                       value_vars=['iou_SYNT', 'iou_GDA', 'iou_DK'], 
                       var_name='test data', value_name='iou')
     df['test data'] = df['test data'].str.replace('iou_', '')
@@ -137,34 +209,8 @@ def plot_3d(df: pd.DataFrame):
     pass
 
 
-# def bars(df: pd.DataFrame, x, y, h, f):
-#     '''
-#     sngl ph
-#     '''
-#     pass
-
-
-# def lines_cat(df: pd.DataFrame, x, y, h, f):
-#     '''
-#     ph123 by ph
-#     '''
-#     pass
-
-
 def dist_4d_cont(df: pd.DataFrame, x, y, h, f, r):
     pass
-
-
-# def dist_box_viol(df: pd.DataFrame, x, y, h, f, ch='box'):
-#     return sns.catplot(
-#         data=df,
-#         x=x,
-#         y=y,
-#         hue=h,
-#         col=f,
-#         kind=ch,
-#         # col_wrap=col_wrap,
-#     )
 
 
 def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line'):
@@ -184,9 +230,10 @@ def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         row=r, # "test data",
         row_order=r_ord, # ["DK", "GDA", "SYNT"],
         col=c, # 's_lvl',
+        col_order=c_ord,
         markers=True,
         sort=True,
-        palette=sns.color_palette(), # 
+        palette=sns.color_palette(), # TODO
     )
 
 
@@ -221,6 +268,24 @@ def plot_prod(g, x, y, h, t='', bs=None): # TODO title, labels
     # g.set_titles("{col_name}")
     # g.set_axis_labels(x, y)
     return g
+
+
+def joint_phases(df: pd.DataFrame): # TODO not by comb_key, new one
+    '''
+    x = 'phase'
+    y = 'IoU'
+    h = 'comb_key'
+    col = 'test set'
+    '''
+    x = 'phase'
+    y = 'IoU'
+    h = 'comb_key'
+    col = 'test set'
+    col_order = ["DK", "GDA", "SYNT"]
+    df = widen_phases(df, x, y, h, col)
+    g = cats(df, x, y, h, col, col_order, ch='point')
+    g = plot_prod(g, x, y, h)
+    return g, df
 
 
 def wall_time(df: pd.DataFrame):
@@ -320,22 +385,35 @@ def run_catch(df: pd.DataFrame, pth_df, pth_plt, fff=wall_time):
 
 
 CHARTS_JOINT = {
-    # 'wall_time': wall_time, # TODO data not ready yet
-    'sngl_ph_tr_val_bar': sngl_ph_tr_val_bar, # almost done: tr_val, no s100
-    'sngl_ph_tr_val_box': sngl_ph_tr_val_box, # almost done: tr_val, no s100
-    'sngl_ph_tr_val_violin': sngl_ph_tr_val_violin, # almost done: tr_val, no s100
+    # 'wall_time': wall_time, # TODO data not ready yet; C
+    # 'joint_workload': wall_time, # TODO rel workload - ious - test sets; D
+    'joint_phases': joint_phases, # TODO h=diversity; B''
 }
+
+CHARTS_SNGL = {
+    'sngl_ph_tr_val_bar': sngl_ph_tr_val_bar, # almost done: tr_val, no s100; A
+    'sngl_ph_tr_val_box': sngl_ph_tr_val_box, # almost done: tr_val, no s100; A
+    'sngl_ph_tr_val_violin': sngl_ph_tr_val_violin, # almost done: tr_val, no s100; A
+    # 'sngl_workload_bar_viol_box': wall_time, # TODO cat workload - ious - test sets; D
+}
+
+# CHARTS = CHARTS_JOINT
+# CHARTS.update(CHARTS_SNGL)
 
 
 def main():
-    # ph123 = pd.read_csv(FILES['joint'])
+    ph123 = pd.read_csv(FILES['joint'])
     ph1 = pd.read_csv(FILES['ph1'])
     # ph2 = pd.read_csv(FILES['ph2'])
     # ph3 = pd.read_csv(FILES['ph3'])
-
-    for ch, ff in CHARTS_JOINT.items(): # TODO match FILE with CHARTS
-        run_catch(ph1, ch+'.csv', ch+'.png', ff) # TODO fname, title
+    process_diversity(ph123)
+    data_diversity_space()
+    # for ch, ff in CHARTS_JOINT.items(): # TODO match FILE with CHARTS
+    #     run_catch(ph123, ch+'.csv', ch+'.png', ff) # TODO fname, title
+    # for ch, ff in CHARTS_SNGL.items(): # TODO match FILE with CHARTS
+    #     run_catch(ph1, ch+'.csv', ch+'.png', ff) # TODO fname, title
 
 
 if __name__ == '__main__':
     main()
+    # data_diversity_space()

@@ -158,6 +158,7 @@ def data_diversity_space():
 
 
 def process_diversity(df: pd.DataFrame):
+    df['cnt_ds'] = df['comb_key'].str.split('_').apply(lambda lst: len(set(map(str.strip, lst))))
     zero = np.array([0, 0])
     df[['d_dom1', 'd_real1']] = df['train_x'].map(DS_DOM_REAL).tolist() # val_x
     df[['d_dom2', 'd_real2']] = df['train_y'].map(DS_DOM_REAL).tolist()
@@ -168,7 +169,7 @@ def process_diversity(df: pd.DataFrame):
                           np.sqrt((df['d_dom2']- zero[0])**2 + (df['d_real2'] - zero[1])**2),
                           np.sqrt((df['d_dom3']- zero[0])**2 + (df['d_real3'] - zero[1])**2)], axis=0)
     df['ddiff'] = (df['d123outer'] - df['d123inner']) / df['d123inner'] * 100
-    print(df[['d123inner', 'd123outer', 'ddiff']].head())
+    print(df[['d123inner', 'd123outer', 'ddiff', 'cnt_ds']].head())
 
 
 def widen_runtime(df: pd.DataFrame, h):

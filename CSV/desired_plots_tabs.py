@@ -14,7 +14,7 @@ import itertools
 import math
 
 SAVING = True
-SAVING = False
+# SAVING = False
 
 if SAVING:
     import matplotlib
@@ -32,7 +32,7 @@ IOU_COLS_DK = ["3_test_DK_iou", "1_test/DK/iou", "2_test/DK/iou",
 
 IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
 
-DIR = 'CSV/joint_ph_charts/modf_rntg2'
+DIR = 'CSV/joint_ph_charts/modf_rnt_wrk_div'
 SAVEDIR = 'CSV/joint_ph_charts/selected'
 
 FILES = {
@@ -43,49 +43,21 @@ FILES = {
     'concat': f'{DIR}/cnc123b.csv',
 }
 
-DS_SIZES_TR = { # TODO
-    's': 123,
-    'dk': 789,
-    'gda': 18,
-}
+# DS: workload (Ssize*factor) =====================
+# sub = 0.1 * |S| * sub
+# dk = 1 * |dk|
+# m = dk + sub
+# DS: diversity (form/content - realism/domain) Sszie
+# real(s) == real(sub)
+# s = 0
+# dk = 1
+# sub = 0
+# m = [real(sub)*|s|*sub + real(dk)*|dk|] / (|s|*sub + |dk|)
+#
+# DS: workload, diversity - train, val; per file
+# DS: workload, diversity - agg as D = Sd or D = d(Sreal, Sdom); W = Sw
+# DS: count uniqe - comb_key only
 
-DS_SIZES_VAL = { # TODO
-    's': 123,
-    'dk': 789,
-    'gda': 20,
-}
-
-S_SUB_SIZES = { # TODO
-    'mix': 456,
-    'composite': 546
-}
-
-DS_DOM_SIM = {
-    's': 0.75,
-    'sub': 0.75,
-    'gda': 1,
-    'dk': 0,
-    'm': 0.25,
-    'subm': 0.5,
-}
-
-DS_REAL = {
-    's': 0,
-    'sub': 0,
-    'gda': 1,
-    'dk': 1,
-    'm': 0.5,
-    'subm': 0.25,
-}
-
-DS_DOM_REAL = {
-    's': [0.75, 0],
-    'sub': [0.75, 0],
-    'gda': [1, 1],
-    'dk': [0, 1],
-    'm': [0.25, 0.5],
-    'subm': [0.5, 0.25],
-}
 
 RNTMS = ['1_cum_Runtime', '2_cum_Runtime', '3_cum_Runtime']
 
@@ -118,58 +90,53 @@ def process_runtime(df: pd.DataFrame, h):
                             i=['row_id', h], j='phase', sep='_', suffix=r"\d+")).reset_index()
 
 
-def process_workload(df: pd.DataFrame):
-    workload_factor = 0.1
-    df['workload'] = 0
-    pass
+def process_diversity_workload(df: pd.DataFrame):
+    df['Sworkload'] = df['workload_x'] + df['workload_y'] + df['workload']
 
+    df['cnt_ds'] = df['comb_key'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst))))
+    df['s_lvl'] = [x.count('s') for x in df['comb_key']]
 
-def data_diversity_space():
-    for pt in DS_DOM_REAL.values():
-        print(math.dist(pt, [0 ,0]))
-    fff = list(zip(DS_DOM_REAL.values(), DS_DOM_REAL.keys()))
-    print(fff[0])
-    df = pd.DataFrame(DS_DOM_REAL.values(), columns=['domain', 'real'])
-    df['key'] = list(DS_DOM_REAL.keys())
-    df['d'] = [math.dist(pt, [0,0]) for pt in DS_DOM_REAL.values()]
-    df.set_index('key').sort_index()
-    print(df.head())
-    g = sns.scatterplot(df, x='real', y='domain', hue='key', size='d')
-    sns.move_legend(g, "upper left", bbox_to_anchor=(1, 1))
-
-    # sns.scatterplot(list(zip(DS_DOM_REAL.values(), DS_DOM_REAL.keys()))) # TODO
-    # # sns.scatterplot(data=list(DS_DOM_REAL.values()))
-    # plt.grid(visible=True, which='major')
-    plt.show()
-
-
-# def data_diversity_space():
-#     d = zip(DS_DOM_SIM.values(), DS_REAL.values())
-#     print(list(d))
-#     # d = itertools.product(DS_DOM_SIM.values(), DS_REAL.values())
-#     for pt in d:
-#         print(math.dist(pt, (0, 0)))
-#     d = zip(DS_DOM_SIM.values(), DS_REAL.values())
-#     # sns.scatterplot(data=zip(*d), hue=DS_DOM_SIM.keys())
-#     # sns.scatterplot(data=list(zip(*d, DS_DOM_SIM.keys())))
-#     sns.scatterplot(data=list(zip(*d)))
-#     plt.grid(visible=True, which='major')
-#     plt.show()
-
-
-def process_diversity(df: pd.DataFrame):
-    df['cnt_ds'] = df['comb_key'].str.split('_').apply(lambda lst: len(set(map(str.strip, lst))))
     zero = np.array([0, 0])
-    df[['d_dom1', 'd_real1']] = df['train_x'].map(DS_DOM_REAL).tolist() # val_x
-    df[['d_dom2', 'd_real2']] = df['train_y'].map(DS_DOM_REAL).tolist()
-    df[['d_dom3', 'd_real3']] = df['train'].map(DS_DOM_REAL).tolist()
-    df['d123inner'] = np.sqrt((df['d_dom1'] + df['d_dom2'] + df['d_dom3'] - zero[0])**2 + 
-                              (df['d_real1'] + df['d_real2'] + df['d_real3'] - zero[1])**2)
-    df['d123outer'] = np.sum([np.sqrt((df['d_dom1']- zero[0])**2 + (df['d_real1'] - zero[1])**2), 
-                          np.sqrt((df['d_dom2']- zero[0])**2 + (df['d_real2'] - zero[1])**2),
-                          np.sqrt((df['d_dom3']- zero[0])**2 + (df['d_real3'] - zero[1])**2)], axis=0)
+    zero3 = np.array([0, 0, 0, 0, 0, 0])
+    df['d123outer'] = df['dist_x'] + df['dist_y'] + df['dist']
+    df['Sdom'] = df['dom_x'] + df['dom_y'] + df['dom']
+    df['Sreal'] = df['real_x'] + df['real_y'] + df['real']
+    df['d123outer'] = df['d123outer'] / 3
+    # df['Sdom'] = df['Sdom'] / 3
+    # df['Sreal'] = df['Sreal'] / 3
+    df['d123inner'] = ((df['Sdom'] - zero[0])**2 + (df['Sreal'] - zero[1])**2)**0.5
+    df['d123inner'] = df['d123inner'].round()
+    df['d123inner3'] = (
+        (df['dom_x'])**2 + (df['dom_y'])**2 + (df['dom'])**2 +
+        (df['real_x'])**2 + (df['real_y'])**2 + (df['real'])**2
+        )**0.5
+    df['d123inner3'] = df['d123inner'].round()
+    df['Sdom'] = df['Sdom'].round()
+    df['Sreal'] = df['Sreal'].round()
     df['ddiff'] = (df['d123outer'] - df['d123inner']) / df['d123inner'] * 100
-    print(df[['d123inner', 'd123outer', 'ddiff', 'cnt_ds']].head())
+
+    print(df[['d123inner', 'd123outer', 'ddiff', 'cnt_ds', 'Sworkload']].head())
+
+    if not SAVING:
+        sns.scatterplot(data=df, x='Sdom', y='Sreal', hue='d123inner', size='d123inner')
+        # sns.scatterplot(data=df, x='Sdom', y='Sreal')
+        plt.xlim(-7, 7)
+        plt.ylim(-7, 7)
+        plt.grid(visible=True, which='major')
+        plt.show()
+
+        # sns.scatterplot(data=df, x='d123inner', y='d123outer')
+        sns.scatterplot(data=df, x='d123inner', y='d123inner3')
+        plt.show()
+
+        sns.catplot(data=df, x='cnt_ds', y='d123inner')
+        plt.show()
+
+        sns.scatterplot(data=df, x='d123inner', y='Sworkload', hue='d123inner', size='d123inner')
+        plt.grid(visible=True, which='major')
+        plt.show()
+
+    return df
 
 
 def widen_runtime(df: pd.DataFrame, h):
@@ -271,7 +238,7 @@ def plot_prod(g, x, y, h, t='', bs=None): # TODO title, labels
     return g
 
 
-def joint_phases(df: pd.DataFrame): # TODO not by comb_key, new one
+def joint_phases(df: pd.DataFrame, h): # TODO not by comb_key, new one
     '''
     x = 'phase'
     y = 'IoU'
@@ -280,11 +247,14 @@ def joint_phases(df: pd.DataFrame): # TODO not by comb_key, new one
     '''
     x = 'phase'
     y = 'IoU'
-    h = 'comb_key'
+    # h = 'comb_key'
+    # h = 'd123inner' # TODO
     col = 'test set'
     col_order = ["DK", "GDA", "SYNT"]
     df = widen_phases(df, x, y, h, col)
+    # bs = [0.71, 0.617, 0.359]
     g = cats(df, x, y, h, col, col_order, ch='point')
+    # g = cats(df, x, y, h, r=col, r_ord=col_order, ch='point')
     g = plot_prod(g, x, y, h)
     return g, df
 
@@ -372,17 +342,31 @@ def sngl_ph_tr_val_violin(df: pd.DataFrame, t=''):
     return g, df
     
 
-
 def run_catch(df: pd.DataFrame, pth_df, pth_plt, fff=wall_time):
-    g, df = fff(df)
-    if SAVING:
-        df.to_csv(SAVEDIR / pth_df)
-        g.savefig(SAVEDIR / pth_plt)
-        g.close()
+    if fff == joint_phases:
+        df_org = df.copy()
+        for h in ['d123inner', 'd123inner3', 'Sdom', 'Sreal', 'cnt_ds', 's_lvl']: # , 'comb_key']:
+            print(h)
+            g, df = fff(df_org, h)
+            if SAVING:
+                ppp = pth_plt.replace('.png', f'{h}.png')
+                # df.to_csv(SAVEDIR / pth_df.replace('.png', f'{h}.png'))
+                g.savefig(f'{SAVEDIR}/{ppp}')
+                # g.close()
+            else:
+                print(df.columns)
+                print(df.head())
+                plt.show()
     else:
-        print(df.columns)
-        print(df.head())
-        plt.show()
+        g, df = fff(df)
+        if SAVING:
+            # df.to_csv(SAVEDIR / pth_df)
+            g.savefig(SAVEDIR / pth_plt)
+            # g.close()
+        else:
+            print(df.columns)
+            print(df.head())
+            plt.show()
 
 
 CHARTS_JOINT = {
@@ -407,14 +391,12 @@ def main():
     ph1 = pd.read_csv(FILES['ph1'])
     # ph2 = pd.read_csv(FILES['ph2'])
     # ph3 = pd.read_csv(FILES['ph3'])
-    process_diversity(ph123)
-    data_diversity_space()
-    # for ch, ff in CHARTS_JOINT.items(): # TODO match FILE with CHARTS
-    #     run_catch(ph123, ch+'.csv', ch+'.png', ff) # TODO fname, title
+    ph123 = process_diversity_workload(ph123)
+    for ch, ff in CHARTS_JOINT.items(): # TODO match FILE with CHARTS
+        run_catch(ph123, ch+'.csv', ch+'.png', ff) # TODO fname, title
     # for ch, ff in CHARTS_SNGL.items(): # TODO match FILE with CHARTS
     #     run_catch(ph1, ch+'.csv', ch+'.png', ff) # TODO fname, title
 
 
 if __name__ == '__main__':
     main()
-    # data_diversity_space()

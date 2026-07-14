@@ -30,8 +30,10 @@ IOU_COLS_DK = ["3_test_DK_iou", "1_test/DK/iou", "2_test/DK/iou",
 
 IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
 
-DIR = 'CSV/joint_ph_charts/modf_rnt_wrk_div_tr'
-SAVEDIR = 'CSV/joint_ph_charts/selected'
+DIR = 'CSV/joint_ph_charts/modf_rnt_wrk_div'
+# DIR = 'CSV/joint_ph_charts/modf_rnt_wrk_div_tr'
+SAVEDIR = 'CSV/joint_ph_charts/selected/tr_val_derivs'
+# SAVEDIR = 'CSV/joint_ph_charts/selected/tr_only_derivs'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
@@ -102,8 +104,8 @@ def process_diversity_workload(df: pd.DataFrame):
     df['dk_lvl'] = [x.count('dk') for x in df['comb_key']] # how many DKs: dk
     df['dk_lvl'] += [x.count('m') for x in df['comb_key']] # plus how many MIXs: m
     df['gda_lvl'] = [x.count('gda') for x in df['comb_key']] # how many GDAs
-    # df['s_lvl'] = [x.count('s') for x in df['trains']] # how many SYNTs
-    # df['gda_lvl'] = [x.count('gda') for x in df['trains']] # how many GDAs
+    # df['s_lvl'] = [x.count('s') for x in df['trains']] # how many SYNTs in train only
+    # df['gda_lvl'] = [x.count('gda') for x in df['trains']] # how many GDAs in train only
 
     df['DS_scores_sum'] = df['dist_x'] + df['dist_y'] + df['dist'] # sum of 1, 2, 3 scores
     # df['DS_scores_sum'] = df['DS_scores_sum'] / 3
@@ -202,20 +204,6 @@ def widen_phases(df: pd.DataFrame, x='phase', y='IoU', h=['tr_val'], f='test set
     return df
 
 
-def plot_4d(df: pd.DataFrame):
-    '''
-    IoU, ph/t/hyperparam, test set, key
-    '''
-    pass
-
-
-def plot_3d(df: pd.DataFrame):
-    '''
-    IoU, hyperparam, test set
-    '''
-    pass
-
-
 def dist_4d_cont(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='scatter'):
     pass
 
@@ -241,7 +229,6 @@ def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         col=c, # 's_lvl',
         col_order=c_ord,
         markers=True,
-        # sort=True,
         # palette=sns.color_palette(), # TODO
     )
 
@@ -379,7 +366,7 @@ def wall_time(df: pd.DataFrame):
     return g, df
 
 
-def derived_keys(df: pd.DataFrame, x='DS_score_raw', h=None): # h='DS_score'
+def derived_keys_scatter(df: pd.DataFrame, x='DS_score_raw', h=None): # h='DS_score'
     '''
     y = 'IoU'
     col = 'test set'
@@ -390,7 +377,6 @@ def derived_keys(df: pd.DataFrame, x='DS_score_raw', h=None): # h='DS_score'
     col_order = ["DK", "GDA", "SYNT"]
     row = 'phase'
     df = widen_phases(df, x=row, y=y, h=[x], f=col) # [x, h]
-    # print(df.head())
     g = rels(df, x, y, h, col, col_order, row, [1, 2, 3], ch='scatter', size=h)
     g = plot_prod(g, x, y, h)
     return g, df
@@ -472,7 +458,6 @@ def sngl_ph_tr_val_bar(df: pd.DataFrame, h='tr_val', t=''):
     '''
     x = 'phase'
     y = 'IoU'
-    # h = 'tr_val'
     col = 'test set'
     col_order = ["DK", "GDA", "SYNT"]
     ch='bar'
@@ -492,7 +477,6 @@ def sngl_ph_tr_val_box(df: pd.DataFrame, h='tr_val', t=''):
     '''
     x = 'phase'
     y = 'IoU'
-    # h = 'tr_val'
     col = 'test set'
     col_order = ["DK", "GDA", "SYNT"]
     ch='box'
@@ -512,7 +496,6 @@ def sngl_ph_tr_val_violin(df: pd.DataFrame, h='tr_val', t=''):
     '''
     x = 'phase'
     y = 'IoU'
-    # h = 'tr_val'
     col = 'test set'
     col_order = ["DK", "GDA", "SYNT"]
     ch='violin'
@@ -524,14 +507,12 @@ def sngl_ph_tr_val_violin(df: pd.DataFrame, h='tr_val', t=''):
     
 
 def run_catch(df: pd.DataFrame, pth_df, pth_plt, fff=wall_time):
-    # if fff == joint_phases_pt_line:
-    catt = ['cnt_ds', 's_lvl', 'gda_lvl']
+    catt = ['cnt_ds', 's_lvl', 'gda_lvl'] # , 'comb_key']
     rell = ['DS_score_tot_raw', 'DS_score_raw', 'Sdom_raw', 'Sreal_raw']
     df_org = df.copy()
     if fff in CHARTS_JOINT.values():
-        # for h in ['DS_score_tot', 'DS_score', 'Sdom', 'Sreal', 'cnt_ds', 's_lvl', 'gda_lvl']: # , 'comb_key']
-        ks = rell if fff == derived_keys else catt
-        for h in ks: # , 'comb_key']:
+        ks = rell if fff == derived_keys_scatter else catt
+        for h in ks:
             print(h)
             g, df = fff(df_org, h)
             if SAVING:
@@ -567,14 +548,18 @@ CHARTS_JOINT = {
     'joint_phases_bar': joint_phases_bar,
     'joint_phases_box': joint_phases_box,
     'joint_phases_violin': joint_phases_violin,
-}
-
-CHARTS_JOINT = { # these should work for ph3 from joint - final effect TODO where phase == 3 after proc; r=None
-    'derived_keys': derived_keys,
+    'derived_keys_scatter': derived_keys_scatter,
     'derived_keys_bar': derived_keys_bar,
     'derived_keys_box': derived_keys_box,
     'derived_keys_violin': derived_keys_violin,
 }
+
+# CHARTS_JOINT = { # these should work for ph3 from joint - final effect TODO where phase == 3 after proc; r=None
+#     'derived_keys': derived_keys,
+#     'derived_keys_bar': derived_keys_bar,
+#     'derived_keys_box': derived_keys_box,
+#     'derived_keys_violin': derived_keys_violin,
+# }
 
 CHARTS_SNGL = { # 1st phase; TODO rel with dist_raw and with workload
     'sngl_ph_tr_val_bar': sngl_ph_tr_val_bar, # almost done: tr_val, no s100; A

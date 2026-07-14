@@ -10,8 +10,7 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import re
-import itertools
-import math
+
 
 SAVING = True
 # SAVING = False
@@ -64,7 +63,8 @@ RNTMS = ['1_cum_Runtime', '2_cum_Runtime', '3_cum_Runtime']
 
 def _clean_df_(df: pd.DataFrame, h=['comb_key']):
     cols = df.columns
-    cols = list(set(cols) & set(IOU_COLS)) + h
+    # cols = list(set(cols) & set(IOU_COLS)) + h
+    cols = list(set(cols) & set(IOU_COLS+h)) # TODO ?
     return df[cols]
 
 
@@ -73,11 +73,11 @@ def process_runtime(df: pd.DataFrame, h):
     cols
     '''
     def rename_column(col):
-        m = re.match(r"(\d+)_test_([A-Z]+)_iou$", col) # Match: phase_test_SET_t
+        m = re.match(r"(\d+)_test_([A-Z]+)_iou$", col) # Match: phase_test_SET_iou
         if m:
             phase, set_name = m.groups()
             return f"iou_{set_name}_{phase}"
-        m = re.match(r"(\d+)_cum_Runtime$", col) # Match: phase_cum_m
+        m = re.match(r"(\d+)_cum_Runtime$", col) # Match: phase_cum_Runtime
         if m:
             phase = m.group(1)
             return f"Runtime_{phase}"
@@ -91,50 +91,60 @@ def process_runtime(df: pd.DataFrame, h):
 
 
 def process_diversity_workload(df: pd.DataFrame):
-    df['Sworkload'] = df['workload_x'] + df['workload_y'] + df['workload']
+    '''
+    directly with 3-phase runs
+    '''
+    df['Sworkload'] = df['workload_x'] + df['workload_y'] + df['workload'] # sum
 
-    df['cnt_ds'] = df['comb_key'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst))))
-    df['s_lvl'] = [x.count('s') for x in df['comb_key']]
+    df['cnt_ds'] = df['comb_key'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) # number of DSs
+    df['s_lvl'] = [x.count('s') for x in df['comb_key']] # how many SYNTs
+    df['DS_scores_sum'] = df['dist_x'] + df['dist_y'] + df['dist'] # sum of 1, 2, 3 scores
+    # df['DS_scores_sum'] = df['DS_scores_sum'] / 3
 
-    zero = np.array([0, 0])
-    zero3 = np.array([0, 0, 0, 0, 0, 0])
-    df['d123outer'] = df['dist_x'] + df['dist_y'] + df['dist']
-    df['Sdom'] = df['dom_x'] + df['dom_y'] + df['dom']
-    df['Sreal'] = df['real_x'] + df['real_y'] + df['real']
-    df['d123outer'] = df['d123outer'] / 3
-    # df['Sdom'] = df['Sdom'] / 3
-    # df['Sreal'] = df['Sreal'] / 3
-    df['d123inner'] = ((df['Sdom'] - zero[0])**2 + (df['Sreal'] - zero[1])**2)**0.5
-    df['d123inner'] = df['d123inner'].round()
-    df['d123inner3'] = (
+    df['Sdom_raw'] = df['dom_x'] + df['dom_y'] + df['dom'] # sum of dim
+    df['Sreal_raw'] = df['real_x'] + df['real_y'] + df['real'] # sum of dim    
+    # df['Sdom_raw'] = df['Sdom_raw'] / 3
+    # df['Sreal_raw'] = df['Sreal_raw'] / 3
+    df['DS_score_tot_raw'] = ((df['Sdom_raw'])**2 + (df['Sreal_raw'])**2)**0.5 # score by summed dims
+    df['DS_score_tot'] = df['DS_score_tot_raw'].round()
+    df['Sdom'] = df['Sdom_raw'].round()
+    df['Sreal'] = df['Sreal_raw'].round()
+
+    df['DS_score_raw'] = ( # score by 1, 2, 3 dims
         (df['dom_x'])**2 + (df['dom_y'])**2 + (df['dom'])**2 +
         (df['real_x'])**2 + (df['real_y'])**2 + (df['real'])**2
         )**0.5
-    df['d123inner3'] = df['d123inner'].round()
-    df['Sdom'] = df['Sdom'].round()
-    df['Sreal'] = df['Sreal'].round()
-    df['ddiff'] = (df['d123outer'] - df['d123inner']) / df['d123inner'] * 100
-
-    print(df[['d123inner', 'd123outer', 'ddiff', 'cnt_ds', 'Sworkload']].head())
+    df['DS_score'] = df['DS_score_raw'].round()
+    
+    df['ddiff'] = (df['DS_scores_sum'] - df['DS_score_tot_raw']) / df['DS_score_tot_raw'] * 100
+    # print(df[['DS_score_tot', 'DS_scores_sum', 'ddiff', 'cnt_ds', 'Sworkload']].head())
 
     if not SAVING:
-        sns.scatterplot(data=df, x='Sdom', y='Sreal', hue='d123inner', size='d123inner')
+        sns.scatterplot(data=df, x='Sdom', y='Sreal', hue='DS_score_tot', size='DS_score_tot')
         # sns.scatterplot(data=df, x='Sdom', y='Sreal')
         plt.xlim(-7, 7)
         plt.ylim(-7, 7)
         plt.grid(visible=True, which='major')
         plt.show()
-
-        # sns.scatterplot(data=df, x='d123inner', y='d123outer')
-        sns.scatterplot(data=df, x='d123inner', y='d123inner3')
-        plt.show()
-
-        sns.catplot(data=df, x='cnt_ds', y='d123inner')
-        plt.show()
-
-        sns.scatterplot(data=df, x='d123inner', y='Sworkload', hue='d123inner', size='d123inner')
+        
+        # sns.scatterplot(data=df, x='Sdom_raw', y='Sreal_raw', hue='DS_score_tot', size='DS_score_tot_raw')
+        sns.scatterplot(data=df, x='Sdom_raw', y='Sreal_raw', hue='DS_score', size='DS_score_raw')
+        plt.xlim(-7, 7)
+        plt.ylim(-7, 7)
         plt.grid(visible=True, which='major')
         plt.show()
+
+        # sns.scatterplot(data=df, x='DS_score_tot', y='DS_scores_sum')
+        # sns.scatterplot(data=df, x='DS_score_tot', y='DS_score')
+        sns.scatterplot(data=df, x='DS_score_tot_raw', y='DS_score_raw')
+        plt.show()
+
+        # sns.catplot(data=df, x='cnt_ds', y='DS_score_tot')
+        # plt.show()
+
+        # sns.scatterplot(data=df, x='DS_score_tot', y='Sworkload', hue='DS_score_tot', size='DS_score_tot')
+        # plt.grid(visible=True, which='major')
+        # plt.show()
 
     return df
 
@@ -153,13 +163,24 @@ def widen_runtime(df: pd.DataFrame, h):
     return plot_df, ho
 
 
-def widen_phases(df: pd.DataFrame, x='phase', y='IoU', h='tr_val', f='test set'):
-    df = _clean_df_(df, [h])
-    df = df.melt(id_vars=[h], var_name='col_name', value_name=y) # 3_test_GDA_iou
+# def widen_phases(df: pd.DataFrame, x='phase', y='IoU', h='tr_val', f='test set'):
+#     df = _clean_df_(df, [h])
+#     df = df.melt(id_vars=[h], var_name='col_name', value_name=y) # 3_test_GDA_iou
+#     df[[x, f]] = df['col_name'].str.split('_', n=1, expand=True) # 3, test_GDA_iou
+#     df[f] = df[f].str.split('_', expand=True)[1] # GDA
+#     df[x] = pd.to_numeric(df[x], downcast='integer')
+#     df = df.drop(columns=['col_name'])
+#     return df
+
+
+def widen_phases(df: pd.DataFrame, x='phase', y='IoU', h=['tr_val'], f='test set'):
+    df = _clean_df_(df, h)
+    df = df.melt(id_vars=h, var_name='col_name', value_name=y) # 3_test_GDA_iou
     df[[x, f]] = df['col_name'].str.split('_', n=1, expand=True) # 3, test_GDA_iou
     df[f] = df[f].str.split('_', expand=True)[1] # GDA
     df[x] = pd.to_numeric(df[x], downcast='integer')
     df = df.drop(columns=['col_name'])
+    print(df.columns)
     return df
 
 
@@ -186,6 +207,7 @@ def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
     all rel plots
     ph123 by cont
     '''
+    print(df.head())
     return sns.relplot(
         data=df, # df.sort_values(by='phase'),
         kind=ch,
@@ -201,7 +223,7 @@ def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         col_order=c_ord,
         markers=True,
         sort=True,
-        palette=sns.color_palette(), # TODO
+        # palette=sns.color_palette(), # TODO
     )
 
 
@@ -219,6 +241,7 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, ch='
         col_order=c_ord,
         row=r,
         row_order=r_ord,
+        palette=sns.color_palette(),
     )
 
 
@@ -242,19 +265,14 @@ def joint_phases(df: pd.DataFrame, h): # TODO not by comb_key, new one
     '''
     x = 'phase'
     y = 'IoU'
-    h = 'comb_key'
     col = 'test set'
     '''
     x = 'phase'
     y = 'IoU'
-    # h = 'comb_key'
-    # h = 'd123inner' # TODO
     col = 'test set'
     col_order = ["DK", "GDA", "SYNT"]
-    df = widen_phases(df, x, y, h, col)
-    # bs = [0.71, 0.617, 0.359]
+    df = widen_phases(df, x, y, [h], col)
     g = cats(df, x, y, h, col, col_order, ch='point')
-    # g = cats(df, x, y, h, r=col, r_ord=col_order, ch='point')
     g = plot_prod(g, x, y, h)
     return g, df
 
@@ -318,7 +336,6 @@ def sngl_ph_tr_val_box(df: pd.DataFrame, t=''):
     g = cats(df, x, y, h, col, col_order, ch=ch)
     g = plot_prod(g, x, y, h, t=t, bs=bs)
     return g, df
-    
 
 
 def sngl_ph_tr_val_violin(df: pd.DataFrame, t=''):
@@ -345,24 +362,24 @@ def sngl_ph_tr_val_violin(df: pd.DataFrame, t=''):
 def run_catch(df: pd.DataFrame, pth_df, pth_plt, fff=wall_time):
     if fff == joint_phases:
         df_org = df.copy()
-        for h in ['d123inner', 'd123inner3', 'Sdom', 'Sreal', 'cnt_ds', 's_lvl']: # , 'comb_key']:
+        for h in ['DS_score_tot', 'DS_score', 'Sdom', 'Sreal', 'cnt_ds', 's_lvl']: # , 'comb_key']:
             print(h)
             g, df = fff(df_org, h)
             if SAVING:
-                ppp = pth_plt.replace('.png', f'{h}.png')
-                # df.to_csv(SAVEDIR / pth_df.replace('.png', f'{h}.png'))
+                ppp = pth_plt.replace('.png', f'_{h}.png')
+                ppdf = pth_df.replace('.csv', f'_{h}.csv')
+                df.to_csv(f'{SAVEDIR}/{ppdf}')
                 g.savefig(f'{SAVEDIR}/{ppp}')
-                # g.close()
             else:
                 print(df.columns)
                 print(df.head())
                 plt.show()
+            print()
     else:
         g, df = fff(df)
         if SAVING:
-            # df.to_csv(SAVEDIR / pth_df)
-            g.savefig(SAVEDIR / pth_plt)
-            # g.close()
+            df.to_csv(f'{SAVEDIR}/{pth_df}')
+            g.savefig(f'{SAVEDIR}/{pth_plt}')
         else:
             print(df.columns)
             print(df.head())
@@ -370,7 +387,7 @@ def run_catch(df: pd.DataFrame, pth_df, pth_plt, fff=wall_time):
 
 
 CHARTS_JOINT = {
-    # 'wall_time': wall_time, # TODO data not ready yet; C
+    'wall_time': wall_time, # TODO data not ready yet; C
     # 'joint_workload': wall_time, # TODO rel workload - ious - test sets; D
     'joint_phases': joint_phases, # TODO h=diversity; B''
 }
@@ -382,20 +399,28 @@ CHARTS_SNGL = {
     # 'sngl_workload_bar_viol_box': wall_time, # TODO cat workload - ious - test sets; D
 }
 
-# CHARTS = CHARTS_JOINT
-# CHARTS.update(CHARTS_SNGL)
-
 
 def main():
     ph123 = pd.read_csv(FILES['joint'])
     ph1 = pd.read_csv(FILES['ph1'])
     # ph2 = pd.read_csv(FILES['ph2'])
     # ph3 = pd.read_csv(FILES['ph3'])
+
     ph123 = process_diversity_workload(ph123)
-    for ch, ff in CHARTS_JOINT.items(): # TODO match FILE with CHARTS
-        run_catch(ph123, ch+'.csv', ch+'.png', ff) # TODO fname, title
-    # for ch, ff in CHARTS_SNGL.items(): # TODO match FILE with CHARTS
-    #     run_catch(ph1, ch+'.csv', ch+'.png', ff) # TODO fname, title
+    # x = 'DS_score_raw'
+    # y = 'IoU'
+    # h = 'DS_score'
+    # col = 'test set'
+    # df = widen_phases(ph123, h=[h, x])
+    # df[x] = df[x].astype(float)
+    # g = rels(df, x, y, h, col, c_ord=["DK", "GDA", "SYNT"], r='phase', r_ord=[1, 2, 3], ch='line', s=h)
+    # # g = rels(df, x, y, h, col, ["DK", "GDA", "SYNT"], ch='scatter')
+    # plt.show()
+
+    for ch, ff in CHARTS_JOINT.items():
+        run_catch(ph123, ch+'.csv', ch+'.png', ff)
+    for ch, ff in CHARTS_SNGL.items():
+        run_catch(ph1, ch+'.csv', ch+'.png', ff)
 
 
 if __name__ == '__main__':

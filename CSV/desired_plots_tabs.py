@@ -7,7 +7,6 @@ saving tabs & charts
 
 
 import pandas as pd
-import numpy as np
 import seaborn as sns
 import re
 
@@ -31,7 +30,7 @@ IOU_COLS_DK = ["3_test_DK_iou", "1_test/DK/iou", "2_test/DK/iou",
 
 IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
 
-DIR = 'CSV/joint_ph_charts/modf_rnt_wrk_div'
+DIR = 'CSV/joint_ph_charts/modf_rnt_wrk_div_tr'
 SAVEDIR = 'CSV/joint_ph_charts/selected'
 
 FILES = {
@@ -97,7 +96,15 @@ def process_diversity_workload(df: pd.DataFrame):
     df['Sworkload'] = df['workload_x'] + df['workload_y'] + df['workload'] # sum
 
     df['cnt_ds'] = df['comb_key'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) # number of DSs
-    df['s_lvl'] = [x.count('s') for x in df['comb_key']] # how many SYNTs
+
+    df['s_lvl'] = [x.count('s') for x in df['comb_key']] # how many SYNTs: s, sub, subm
+    df['s_lvl'] += [x.count('_m') for x in df['comb_key']] # plus how many MIXs: _m
+    df['dk_lvl'] = [x.count('dk') for x in df['comb_key']] # how many DKs: dk
+    df['dk_lvl'] += [x.count('m') for x in df['comb_key']] # plus how many MIXs: m
+    df['gda_lvl'] = [x.count('gda') for x in df['comb_key']] # how many GDAs
+    # df['s_lvl'] = [x.count('s') for x in df['trains']] # how many SYNTs
+    # df['gda_lvl'] = [x.count('gda') for x in df['trains']] # how many GDAs
+
     df['DS_scores_sum'] = df['dist_x'] + df['dist_y'] + df['dist'] # sum of 1, 2, 3 scores
     # df['DS_scores_sum'] = df['DS_scores_sum'] / 3
 
@@ -119,7 +126,7 @@ def process_diversity_workload(df: pd.DataFrame):
     df['ddiff'] = (df['DS_scores_sum'] - df['DS_score_tot_raw']) / df['DS_score_tot_raw'] * 100
     # print(df[['DS_score_tot', 'DS_scores_sum', 'ddiff', 'cnt_ds', 'Sworkload']].head())
 
-    if not SAVING:
+    if not SAVING and False:
         sns.scatterplot(data=df, x='Sdom', y='Sreal', hue='DS_score_tot', size='DS_score_tot')
         # sns.scatterplot(data=df, x='Sdom', y='Sreal')
         plt.xlim(-7, 7)
@@ -150,7 +157,7 @@ def process_diversity_workload(df: pd.DataFrame):
 
 
 def widen_runtime(df: pd.DataFrame, h):
-    df = pd.melt(df, id_vars=[h, 's_lvl', 'phase', 'Runtime'], # TODO s_lvl
+    df = pd.melt(df, id_vars=[h, 's_lvl', 'phase', 'Runtime'],
                       value_vars=['iou_SYNT', 'iou_GDA', 'iou_DK'], 
                       var_name='test data', value_name='iou')
     df['test data'] = df['test data'].str.replace('iou_', '')
@@ -161,6 +168,17 @@ def widen_runtime(df: pd.DataFrame, h):
     plot_df_runtime = df.groupby(by=[h, 'phase', 's_lvl'], as_index=False).agg(Runtime=('Runtime', 'mean')) # time by ph, key
     plot_df = pd.merge(left=plot_df_iou, right=plot_df_runtime, on=[h, 'phase', 's_lvl'])
     return plot_df, ho
+
+
+def widen_cont_diversity(df: pd.DataFrame, h=['s_lvl']):
+    df = pd.melt(df, id_vars=h+['phase'],
+                      value_vars=['iou_SYNT', 'iou_GDA', 'iou_DK'], 
+                      var_name='test data', value_name='iou')
+    df['test data'] = df['test data'].str.replace('iou_', '')
+    # plot_df_iou = df.groupby(by=h+['phase', 'test data'], as_index=False).agg(iou=('iou', 'mean')) # IoU by ph, data, key
+    # plot_df_runtime = df.groupby(by=[h, 'phase', 's_lvl'], as_index=False).agg(Runtime=('Runtime', 'mean')) # time by ph, key
+    # plot_df = pd.merge(left=plot_df_iou, right=plot_df_runtime, on=[h, 'phase', 's_lvl'])
+    return df
 
 
 # def widen_phases(df: pd.DataFrame, x='phase', y='IoU', h='tr_val', f='test set'):
@@ -198,16 +216,16 @@ def plot_3d(df: pd.DataFrame):
     pass
 
 
-def dist_4d_cont(df: pd.DataFrame, x, y, h, f, r):
+def dist_4d_cont(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='scatter'):
     pass
 
 
-def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line'):
+def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
     '''
     all rel plots
     ph123 by cont
     '''
-    print(df.head())
+    # print(df.head())
     return sns.relplot(
         data=df, # df.sort_values(by='phase'),
         kind=ch,
@@ -217,12 +235,13 @@ def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         hue_order=h_ord, # sorted(ho, key=lambda x: str(x).count('s')),
         # style='phase',
         style=s, # h,
+        size=size,
         row=r, # "test data",
         row_order=r_ord, # ["DK", "GDA", "SYNT"],
         col=c, # 's_lvl',
         col_order=c_ord,
         markers=True,
-        sort=True,
+        # sort=True,
         # palette=sns.color_palette(), # TODO
     )
 
@@ -261,7 +280,20 @@ def plot_prod(g, x, y, h, t='', bs=None): # TODO title, labels
     return g
 
 
-def joint_phases(df: pd.DataFrame, h): # TODO not by comb_key, new one
+def joint_phases(df: pd.DataFrame, h):
+    '''
+    x = 'phase'
+    y = 'IoU'
+    col = 'test set'
+    '''
+    x = 'phase'
+    y = 'IoU'
+    col = 'test set'
+    df = widen_phases(df, x, y, [h], col)
+    return df
+
+
+def joint_phases_pt_line(df: pd.DataFrame, h):
     '''
     x = 'phase'
     y = 'IoU'
@@ -271,9 +303,60 @@ def joint_phases(df: pd.DataFrame, h): # TODO not by comb_key, new one
     y = 'IoU'
     col = 'test set'
     col_order = ["DK", "GDA", "SYNT"]
-    df = widen_phases(df, x, y, [h], col)
+    df = joint_phases(df, h)
     g = cats(df, x, y, h, col, col_order, ch='point')
     g = plot_prod(g, x, y, h)
+    return g, df
+
+
+def joint_phases_bar(df: pd.DataFrame, h):
+    '''
+    x = 'phase'
+    y = 'IoU'
+    col = 'test set'
+    '''
+    x = 'phase'
+    y = 'IoU'
+    col = 'test set'
+    col_order = ["DK", "GDA", "SYNT"]
+    bs = [0.71, 0.617, 0.359]
+    df = joint_phases(df, h)
+    g = cats(df, x, y, h, col, col_order, ch='bar')
+    g = plot_prod(g, x, y, h, bs=bs)
+    return g, df
+
+
+def joint_phases_box(df: pd.DataFrame, h):
+    '''
+    x = 'phase'
+    y = 'IoU'
+    col = 'test set'
+    '''
+    x = 'phase'
+    y = 'IoU'
+    col = 'test set'
+    col_order = ["DK", "GDA", "SYNT"]
+    bs = [0.71, 0.617, 0.359]
+    df = joint_phases(df, h)
+    g = cats(df, x, y, h, col, col_order, ch='box')
+    g = plot_prod(g, x, y, h, bs=bs)
+    return g, df
+
+
+def joint_phases_violin(df: pd.DataFrame, h):
+    '''
+    x = 'phase'
+    y = 'IoU'
+    col = 'test set'
+    '''
+    x = 'phase'
+    y = 'IoU'
+    col = 'test set'
+    col_order = ["DK", "GDA", "SYNT"]
+    bs = [0.71, 0.617, 0.359]
+    df = joint_phases(df, h)
+    g = cats(df, x, y, h, col, col_order, ch='violin')
+    g = plot_prod(g, x, y, h, bs=bs)
     return g, df
 
 
@@ -296,73 +379,159 @@ def wall_time(df: pd.DataFrame):
     return g, df
 
 
-def sngl_ph_tr_val_bar(df: pd.DataFrame, t=''):
+def derived_keys(df: pd.DataFrame, x='DS_score_raw', h=None): # h='DS_score'
+    '''
+    y = 'IoU'
+    col = 'test set'
+    row = 'phase'
+    '''
+    y = 'IoU'
+    col = 'test set'
+    col_order = ["DK", "GDA", "SYNT"]
+    row = 'phase'
+    df = widen_phases(df, x=row, y=y, h=[x], f=col) # [x, h]
+    # print(df.head())
+    g = rels(df, x, y, h, col, col_order, row, [1, 2, 3], ch='scatter', size=h)
+    g = plot_prod(g, x, y, h)
+    return g, df
+
+
+def derived_keys_violin(df: pd.DataFrame, x='DS_score_raw', h=None): # h='DS_score'
+    '''
+    y = 'IoU'
+    col = 'test set'
+    row = 'phase'
+    '''
+    y = 'IoU'
+    col = 'test set'
+    col_order = ["DK", "GDA", "SYNT"]
+    row = 'phase'
+    df = widen_phases(df, x=row, y=y, h=[x], f=col) # [x, h]
+    g = cats(df, x, y, h, col, col_order, row, [1, 2, 3], ch='violin')
+    g = plot_prod(g, x, y, h)
+    return g, df
+
+
+def derived_keys_box(df: pd.DataFrame, x='DS_score_raw', h=None): # h='DS_score'
+    '''
+    y = 'IoU'
+    col = 'test set'
+    row = 'phase'
+    '''
+    y = 'IoU'
+    col = 'test set'
+    col_order = ["DK", "GDA", "SYNT"]
+    row = 'phase'
+    df = widen_phases(df, x=row, y=y, h=[x], f=col) # [x, h]
+    g = cats(df, x, y, h, col, col_order, row, [1, 2, 3], ch='box')
+    g = plot_prod(g, x, y, h)
+    return g, df
+
+
+def derived_keys_bar(df: pd.DataFrame, x='DS_score_raw', h=None): # h='DS_score'
+    '''
+    y = 'IoU'
+    col = 'test set'
+    row = 'phase'
+    '''
+    y = 'IoU'
+    col = 'test set'
+    col_order = ["DK", "GDA", "SYNT"]
+    row = 'phase'
+    df = widen_phases(df, x=row, y=y, h=[x], f=col) # [x, h]
+    g = cats(df, x, y, h, col, col_order, row, [1, 2, 3], ch='bar')
+    g = plot_prod(g, x, y, h)
+    return g, df
+
+
+# scatters/rels: r, c, y, x
+# cats: r, c, y, x==h (h agg)
+def workloads_4d_violin(df: pd.DataFrame, x='DS_score_raw', h=None): # h='DS_score' # TODO scatter, viol.
+    '''
+    y = 'IoU'
+    col = 'test set'
+    row = 'phase'
+    '''
+    pass
+    # y = 'IoU'
+    # col = 'test set'
+    # col_order = ["DK", "GDA", "SYNT"]
+    # row = 'phase'
+    # df = widen_phases(df, x=row, y=y, h=[x], f=col) # [x, h]
+    # g = cats(df, x, y, h, col, col_order, row, [1, 2, 3], ch='violin')
+    # g = plot_prod(g, x, y, h)
+    # return g, df
+
+
+def sngl_ph_tr_val_bar(df: pd.DataFrame, h='tr_val', t=''):
     '''
     x = 'phase'
     y = 'IoU'
-    h = 'tr_val'
     col = 'test set'
     ch = 'bar'
     '''
     x = 'phase'
     y = 'IoU'
-    h = 'tr_val'
+    # h = 'tr_val'
     col = 'test set'
     col_order = ["DK", "GDA", "SYNT"]
     ch='bar'
     bs = [0.71, 0.617, 0.359]
-    df = widen_phases(df, x, y, h, col)
+    df = widen_phases(df, x, y, [h], col)
     g = cats(df, x, y, h, col, col_order, ch=ch)
     g = plot_prod(g, x, y, h, t=t, bs=bs)
     return g, df
 
 
-def sngl_ph_tr_val_box(df: pd.DataFrame, t=''):
+def sngl_ph_tr_val_box(df: pd.DataFrame, h='tr_val', t=''):
     '''
     x = 'phase'
     y = 'IoU'
-    h = 'tr_val'
     col = 'test set'
     ch = 'box'
     '''
     x = 'phase'
     y = 'IoU'
-    h = 'tr_val'
+    # h = 'tr_val'
     col = 'test set'
     col_order = ["DK", "GDA", "SYNT"]
     ch='box'
     bs = [0.71, 0.617, 0.359]
-    df = widen_phases(df, x, y, h, col)
+    df = widen_phases(df, x, y, [h], col)
     g = cats(df, x, y, h, col, col_order, ch=ch)
     g = plot_prod(g, x, y, h, t=t, bs=bs)
     return g, df
 
 
-def sngl_ph_tr_val_violin(df: pd.DataFrame, t=''):
+def sngl_ph_tr_val_violin(df: pd.DataFrame, h='tr_val', t=''):
     '''
     x = 'phase'
     y = 'IoU'
-    h = 'tr_val'
     col = 'test set'
     ch = 'violin'
     '''
     x = 'phase'
     y = 'IoU'
-    h = 'tr_val'
+    # h = 'tr_val'
     col = 'test set'
     col_order = ["DK", "GDA", "SYNT"]
     ch='violin'
     bs = [0.71, 0.617, 0.359]
-    df = widen_phases(df, x, y, h, col)
+    df = widen_phases(df, x, y, [h], col)
     g = cats(df, x, y, h, col, col_order, ch=ch)
     g = plot_prod(g, x, y, h, t=t, bs=bs)
     return g, df
     
 
 def run_catch(df: pd.DataFrame, pth_df, pth_plt, fff=wall_time):
-    if fff == joint_phases:
-        df_org = df.copy()
-        for h in ['DS_score_tot', 'DS_score', 'Sdom', 'Sreal', 'cnt_ds', 's_lvl']: # , 'comb_key']:
+    # if fff == joint_phases_pt_line:
+    catt = ['cnt_ds', 's_lvl', 'gda_lvl']
+    rell = ['DS_score_tot_raw', 'DS_score_raw', 'Sdom_raw', 'Sreal_raw']
+    df_org = df.copy()
+    if fff in CHARTS_JOINT.values():
+        # for h in ['DS_score_tot', 'DS_score', 'Sdom', 'Sreal', 'cnt_ds', 's_lvl', 'gda_lvl']: # , 'comb_key']
+        ks = rell if fff == derived_keys else catt
+        for h in ks: # , 'comb_key']:
             print(h)
             g, df = fff(df_org, h)
             if SAVING:
@@ -375,24 +544,39 @@ def run_catch(df: pd.DataFrame, pth_df, pth_plt, fff=wall_time):
                 print(df.head())
                 plt.show()
             print()
-    else:
-        g, df = fff(df)
-        if SAVING:
-            df.to_csv(f'{SAVEDIR}/{pth_df}')
-            g.savefig(f'{SAVEDIR}/{pth_plt}')
-        else:
-            print(df.columns)
-            print(df.head())
-            plt.show()
+    else: # SNGL
+        for h in ['tr_val', 'dist', 'real', 'dom']: # , 'comb_key']:
+            print(h)
+            g, df = fff(df_org, h)
+            if SAVING:
+                ppp = pth_plt.replace('.png', f'_{h}.png')
+                ppdf = pth_df.replace('.csv', f'_{h}.csv')
+                df.to_csv(f'{SAVEDIR}/{ppdf}')
+                g.savefig(f'{SAVEDIR}/{ppp}')
+            else:
+                print(df.columns)
+                print(df.head())
+                plt.show()
+            print()
 
 
 CHARTS_JOINT = {
-    'wall_time': wall_time, # TODO data not ready yet; C
+    # 'wall_time': wall_time, # TODO data not ready yet; C
     # 'joint_workload': wall_time, # TODO rel workload - ious - test sets; D
-    'joint_phases': joint_phases, # TODO h=diversity; B''
+    'joint_phases_pt_line': joint_phases_pt_line,
+    'joint_phases_bar': joint_phases_bar,
+    'joint_phases_box': joint_phases_box,
+    'joint_phases_violin': joint_phases_violin,
 }
 
-CHARTS_SNGL = {
+CHARTS_JOINT = { # these should work for ph3 from joint - final effect TODO where phase == 3 after proc; r=None
+    'derived_keys': derived_keys,
+    'derived_keys_bar': derived_keys_bar,
+    'derived_keys_box': derived_keys_box,
+    'derived_keys_violin': derived_keys_violin,
+}
+
+CHARTS_SNGL = { # 1st phase; TODO rel with dist_raw and with workload
     'sngl_ph_tr_val_bar': sngl_ph_tr_val_bar, # almost done: tr_val, no s100; A
     'sngl_ph_tr_val_box': sngl_ph_tr_val_box, # almost done: tr_val, no s100; A
     'sngl_ph_tr_val_violin': sngl_ph_tr_val_violin, # almost done: tr_val, no s100; A

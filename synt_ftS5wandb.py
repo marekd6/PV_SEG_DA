@@ -1,6 +1,6 @@
 '''
 entry point to define and run tuning scenarios
-stage 1: SYNT/SYNT or GDA
+stage 1 and 3
 '''
 
 import wandb
@@ -17,6 +17,8 @@ test_r =  '/users/project1/pt01299/synt/DK/osfstorage/dataset_v2/solardk_dataset
 
 test_gda = '/users/project1/pt01299/synt/gda70/train/index_test.csv'
 val_gda = '/users/project1/pt01299/synt/gda70/train/index_val.csv'
+val_gda_tr = '/users/project1/pt01299/synt/gda70/train/index_val_tr.csv'
+val_gda_val = '/users/project1/pt01299/synt/gda70/train/index_val_val.csv'
 full_gda = '/users/project1/pt01299/synt/gda70/train/index.csv'
 
 
@@ -344,10 +346,203 @@ full_scaled_eps = {
     }
 }
 
+
+gda_ph3_subm_m = {
+    "name": "gda_ph3_subm_m",
+    "method": "bayes", 
+    "metric": {
+        "name": "3_test/GDA/iou",
+        "goal": "maximize"
+    },
+    "parameters": {
+        "epochs": {
+            "values": [16, 4, 8]
+        },
+        "mod_ph2": {
+            "values": ['gszuy9jw', '6ztbfy35', 'cvu42atm', 'ch9clygy', 'naoka7h9', 'g1reckv0', 'x4o90uoz', 'y57ez3vn', '5u0z2k7k', 'socmlxfg', 'i2gf29uk', 'xwft58d9', 'twr19lwo', 'otnrgdz3', 'wi2jh23x', 'q3l05vl5', 'hdakrj8t', 'xrii4c6m']
+        },
+        "val": {
+            "values": [val_gda_val, val_r]
+        },
+        "sub": {
+            "values": ['']
+        },   
+        "batch_size": {
+            "values": [8, 4, 2]
+        },        
+        "warmup_epochs": {
+            "values": [0, 4]
+        },
+        "wd": {
+            "values": [0.03, 0.015]
+        },
+        "lrenc": {
+            "values": [5e-5]
+        },        
+        "lrdec": {
+            "values": [5e-6]
+        },
+        "ema":{
+            "values": [True, False]
+        },
+        "lr_scheduler": {
+            "values": ['cosine']
+        },    
+        "loss": {
+            "values": ["Dice+Focal"]
+        }          
+    }
+}
+
+
+gda_ph3_subm_s = {
+    "name": "gda_ph3_subm_s",
+    "method": "bayes", 
+    "metric": {
+        "name": "3_test/GDA/iou",
+        "goal": "maximize"
+    },
+    "parameters": {
+        "epochs": {
+            "values": [16, 4, 8]
+        },
+        "mod_ph2": {
+            "values": ['hf9g8e4w', '2s1u2vh8', 'dxpqn25i', 'nuns2l7q', 'rju0votv', '68e5wqwh', 'nl2464z6', 'c49om9fj', 'ndbecwd2', 'npy2u5kc', '7lp2gz2e', 'm4kiorvc', 'an0q41hy', 'a871n5d0', 'vymtls23', 'ml1iin2r', 'ax37mj8u']
+        },
+        "val": {
+            "values": [val_gda_val, val_r]
+        },
+        "sub": {
+            "values": ['']
+        },   
+        "batch_size": {
+            "values": [8, 4, 2]
+        },        
+        "warmup_epochs": {
+            "values": [0, 4]
+        },
+        "wd": {
+            "values": [0.03, 0.015]
+        },
+        "lrenc": {
+            "values": [5e-5]
+        },        
+        "lrdec": {
+            "values": [5e-6]
+        },
+        "ema":{
+            "values": [True, False]
+        },
+        "lr_scheduler": {
+            "values": ['cosine']
+        },    
+        "loss": {
+            "values": ["Dice+Focal"]
+        }          
+    }
+}
+
+
+gda_ph3_subm_gda = {
+    "name": "gda_ph3_subm_gda",
+    "method": "bayes", 
+    "metric": {
+        "name": "3_test/GDA/iou",
+        "goal": "maximize"
+    },
+    "parameters": {
+        "epochs": {
+            "values": [16, 4, 8]
+        },
+        "mod_ph2": {
+            "values": ['i6m0fdau', 'xoahfvum', 'qfqiprmf', 'z635glkj', 'tei7bjrr', 'wh1ns2uw', 'ketuajhh', '8tjscjld', 'jadds8mi', '7uxllt9w', 'jlr59yxd', 'mihucmsb', '9r8pockx', 'd5osit6k', 'pevtyaco', 'rkltfhch', 'uafbq2g8']
+        },
+        "val": {
+            "values": [val_gda_val, val_r]
+        },
+        "sub": {
+            "values": ['']
+        },   
+        "batch_size": {
+            "values": [8, 4, 2]
+        },        
+        "warmup_epochs": {
+            "values": [0, 4]
+        },
+        "wd": {
+            "values": [0.03, 0.015]
+        },
+        "lrenc": {
+            "values": [5e-5]
+        },        
+        "lrdec": {
+            "values": [5e-6]
+        },
+        "ema":{
+            "values": [True, False]
+        },
+        "lr_scheduler": {
+            "values": ['cosine']
+        },    
+        "loss": {
+            "values": ["Dice+Focal"]
+        }          
+    }
+}
+
+
+gda_ph1 = {
+    "name": "gda_ph1",
+    "method": "bayes", 
+    "metric": {
+        "name": "1_test/GDA/iou",
+        "goal": "maximize"
+    },
+    "parameters": {
+        "epochs": {
+            "values": [16, 4, 8, 32]
+        },
+        "val": {
+            "values": [val_gda_val, val_r]
+        },
+        "sub": {
+            "values": ['']
+        },   
+        "batch_size": {
+            "values": [8, 4, 2]
+        },        
+        "warmup_epochs": {
+            "values": [0, 4]
+        },
+        "wd": {
+            "values": [0.03, 0.015]
+        },
+        "lrenc": {
+            "values": [5e-5]
+        },        
+        "lrdec": {
+            "values": [5e-6]
+        },
+        "ema":{
+            "values": [True, False]
+        },
+        "lr_scheduler": {
+            "values": ['cosine']
+        },    
+        "loss": {
+            "values": ["Dice+Focal"]
+        }          
+    }
+}
+
+
+
 if __name__ == "__main__":
-    sweep_id = wandb.sweep(full_scaled_eps, project="pv_short")
+    sweep_id = wandb.sweep(gda_ph1, project="pv_gda")
     print(sweep_id)
-    # sweep_id = wandb.sweep(full_scaled5, project="pv_full")
+    sweep_id = wandb.sweep(gda_ph3_subm_m, project="pv_gda")
     print(sweep_id)
-    # sweep_id = wandb.sweep(dk, project="pv_dk") # 100 eps
+    sweep_id = wandb.sweep(gda_ph3_subm_s, project="pv_gda")
+    print(sweep_id)
+    sweep_id = wandb.sweep(gda_ph3_subm_gda, project="pv_gda")
     print(sweep_id)

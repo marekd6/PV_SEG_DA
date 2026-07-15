@@ -17,7 +17,7 @@ optim = "adamw"  # Options: ['adam', 'adamw']
 report_to = 'wandb'  # Options: ['wandb', 'tensorboard', None]
 writer = '' # ***********************************************************
 workers = 12  # Number of dataloader workers
-save_dir = "/users/project1/pt01299/synt/fts2"
+save_dir = "/users/project1/pt01299/synt/fts2g"
 
 epochs = 16
 iou_decay_fact = 0.7

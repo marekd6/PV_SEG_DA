@@ -1,11 +1,12 @@
 import pandas as pd
-import matplotlib
-matplotlib.use('Agg')
+# import matplotlib
+# matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 
 SAVING = True
+SAVING = False
 
 IOU_COLS_GDA = ["3_test_GDA_iou", "3_test/GDA/iou", "1_test/GDA/iou",  
                 "2_test/GDA/iou", "1_test_GDA_iou", "2_test_GDA_iou"]
@@ -344,17 +345,21 @@ CHARTS1 = { # no bars
     # 'rel_2': rel_2, # large, no agg
     # 'rel_1_x': rel_1_x, # no cat
     'pnt_line3_ph_by_trg_h': pnt_line3_ph_by_trg_h, # only comb_key phases
-    'pnt_line3_ph_by_trg_h_nosharey': pnt_line3_ph_by_trg_h_nosharey, # only comb_key phases
+    # 'pnt_line3_ph_by_trg_h_nosharey': pnt_line3_ph_by_trg_h_nosharey, # only comb_key phases
     'bar3_ph_by_trg_h': bar3_ph_by_trg_h, # h line
     'bar3_trg_by_ph_noh': bar3_trg_by_ph_noh, # rev ins-out (swap ph - target)
     'rot9_bar_trg_ph_nov': rot9_bar_trg_ph_nov, # rot: TODO cut off + same but boxplt/violin
 }
 
 CHARTS1 = {
-    'pnt_line1_ph_by_trg_h': pnt_line1_ph_by_trg_h, # only comb_key phases
-    'pnt_line3_ph_by_trg_h': pnt_line3_ph_by_trg_h, # only comb_key phases
-    'pnt_line3_ph_by_trg_h_nosharey': pnt_line3_ph_by_trg_h_nosharey, # only comb_key phases
+    'rel_2_pnt': pnt_line3_ph_by_trg_h, # large, no agg
 }
+
+# CHARTS1 = {
+#     'pnt_line1_ph_by_trg_h': pnt_line1_ph_by_trg_h, # only comb_key phases
+#     'pnt_line3_ph_by_trg_h': pnt_line3_ph_by_trg_h, # only comb_key phases
+#     'pnt_line3_ph_by_trg_h_nosharey': pnt_line3_ph_by_trg_h_nosharey, # only comb_key phases
+# }
 
 CHARTS2 = { # double split: gda in 1 vs no gda in 1
     # 'rel_2_pnt': rel_2_pnt,
@@ -508,6 +513,7 @@ def plot_file(fu=plot_file_agg, f='joint', keys=['comb_key']):
 if __name__ == '__main__':
     # p1()
     # plot_concat_phases()   
-    # plot_file() # not at all
-    plot_file(fu=plot_file_raw, f='concat', keys=['tr_val'])               
-    plot_file(fu=plot_file_raw)          
+    plot_file() # not at all
+    # plot_file(keys=['tr_val']) # not at all
+    # plot_file(fu=plot_file_raw, f='concat', keys=['tr_val'])               
+    # plot_file(fu=plot_file_raw)          

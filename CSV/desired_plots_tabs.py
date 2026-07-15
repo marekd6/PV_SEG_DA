@@ -128,14 +128,7 @@ def process_diversity_workload(df: pd.DataFrame):
     df['ddiff'] = (df['DS_scores_sum'] - df['DS_score_tot_raw']) / df['DS_score_tot_raw'] * 100
     # print(df[['DS_score_tot', 'DS_scores_sum', 'ddiff', 'cnt_ds', 'Sworkload']].head())
 
-    if not SAVING and False:
-        sns.scatterplot(data=df, x='Sdom', y='Sreal', hue='DS_score_tot', size='DS_score_tot')
-        # sns.scatterplot(data=df, x='Sdom', y='Sreal')
-        plt.xlim(-7, 7)
-        plt.ylim(-7, 7)
-        plt.grid(visible=True, which='major')
-        plt.show()
-        
+    if not SAVING and False:     
         # sns.scatterplot(data=df, x='Sdom_raw', y='Sreal_raw', hue='DS_score_tot', size='DS_score_tot_raw')
         sns.scatterplot(data=df, x='Sdom_raw', y='Sreal_raw', hue='DS_score', size='DS_score_raw')
         plt.xlim(-7, 7)

@@ -450,6 +450,142 @@ def mn():
     # )
 
 
+import numpy as np
+from scipy import stats
+from typing import Optional, Literal
+
+def relplot_aggregated_shared_x(
+    df: pd.DataFrame,
+    x: str,
+    y: str,
+    col: str,
+    key: str,
+    hue: Optional[str] = None,
+    ci: float = 95,
+    ci_method: Literal["t", "bootstrap"] = "t",
+    n_boot: int = 1000,
+    palette: Optional[dict] = None,
+    marker: str = "o",
+    linewidth: float = 2.0,
+    alpha_ci: float = 0.25,
+    figsize=(12, 4),
+    random_state: Optional[int] = None,
+):
+    """
+    Use seaborn.relplot to draw aggregated mean +/- CI lines where:
+      - mean_x is computed per (hue, key) and shared across columns
+      - mean_y and CI are computed per (col, hue, key)
+    Returns the FacetGrid and the aggregated DataFrame used for plotting.
+    """
+    rng = np.random.default_rng(random_state)
+
+    # 1. Clean and required columns
+    cols_needed = [x, y, col, key] + ([hue] if hue is not None else [])
+    dfc = df[cols_needed].dropna(subset=[x, y, col, key]).copy()
+
+    # 2. Compute mean_x per (hue, key) or (key)
+    agg_x_group = [key] if hue is None else [hue, key]
+    mean_x = dfc.groupby(agg_x_group, as_index=False)[x].mean().rename(columns={x: "mean_x"})
+
+    # 3. Compute mean_y and CI per (col, hue, key)
+    group_cols = [col, key] + ([hue] if hue is not None else [])
+    rows = []
+    def t_ci(arr, conf=ci):
+        arr = np.asarray(arr)
+        n = arr.size
+        if n <= 1:
+            return np.nan, np.nan
+        m = np.nanmean(arr)
+        se = stats.sem(arr, nan_policy="omit")
+        alpha = 1 - conf / 100.0
+        tcrit = stats.t.ppf(1 - alpha / 2, df=n - 1)
+        return m - tcrit * se, m + tcrit * se
+
+    def boot_ci(arr, conf=ci, n_iter=n_boot):
+        arr = np.asarray(arr)
+        arr = arr[~np.isnan(arr)]
+        if arr.size == 0:
+            return np.nan, np.nan
+        boot = rng.choice(arr, size=(n_iter, arr.size), replace=True)
+        means = boot.mean(axis=1)
+        lower = np.percentile(means, (100 - conf) / 2)
+        upper = np.percentile(means, 100 - (100 - conf) / 2)
+        return lower, upper
+
+    for name, g in dfc.groupby(group_cols):
+        vals = g[y].dropna().values
+        mean_y = np.nan if vals.size == 0 else vals.mean()
+        if ci_method == "t":
+            lo, hi = t_ci(vals)
+        else:
+            lo, hi = boot_ci(vals)
+        row = dict(zip(group_cols, name if isinstance(name, tuple) else (name,)))
+        row.update({"mean_y": mean_y, "ci_lower": lo, "ci_upper": hi, "n": vals.size})
+        rows.append(row)
+    agg_y = pd.DataFrame(rows)
+
+    # 4. Merge mean_x into agg_y so each (col,hue,key) has the shared mean_x
+    merge_on = [key] + ([hue] if hue is not None else [])
+    plot_df = agg_y.merge(mean_x, how="left", on=merge_on)
+    plot_df = plot_df.dropna(subset=["mean_x", "mean_y"]).copy()
+
+    # 5. Plot with seaborn.relplot using precomputed points
+    sns.set_theme(style="whitegrid")
+    g = sns.relplot(
+        data=plot_df,
+        x="mean_x",
+        y="mean_y",
+        hue=hue,
+        col=col,
+        kind="line",
+        estimator=None,      # use the precomputed means
+        marker=marker,
+        linewidth=linewidth,
+        palette=palette,
+        height=figsize[1],
+        aspect=figsize[0] / figsize[1],
+        legend="brief",
+    )
+
+    # 6. Overlay CI bands per facet and per hue
+    # For each axis (facet) draw fill_between for each hue level present in that facet
+    for ax in g.axes.flat:
+        # determine the column value from the axis title
+        title = ax.get_title()
+        # seaborn titles are like "col = value" or just "value" depending on version
+        if "=" in title:
+            col_val = title.split(" = ", 1)[1].strip()
+        else:
+            col_val = title.strip()
+        facet_df = plot_df[plot_df[col].astype(str) == str(col_val)]
+        if facet_df.empty:
+            continue
+        hue_levels = facet_df[hue].unique() if hue is not None else [None]
+        for h in hue_levels:
+            sub = facet_df if h is None else facet_df[facet_df[hue] == h]
+            if sub.empty:
+                continue
+            sub = sub.sort_values("mean_x")
+            xvals = sub["mean_x"].values
+            lower = sub["ci_lower"].values
+            upper = sub["ci_upper"].values
+            # choose color consistent with the line color
+            if hue is not None:
+                # get color from legend or palette
+                try:
+                    color = g._legend.get_lines()[list(hue_levels).index(h)].get_color()
+                except Exception:
+                    color = None
+            else:
+                color = None
+            ax.fill_between(xvals, lower, upper, color=color, alpha=alpha_ci, linewidth=0)
+
+    # 7. Labels and layout
+    g.set_axis_labels(f"mean {x}", f"mean {y} (±{ci}% CI)")
+    plt.tight_layout()
+    return g, plot_df
+
+
 RNTMS = ['1_cum_Runtime', '2_cum_Runtime', '3_cum_Runtime']
 
 def rename_column(col):
@@ -534,7 +670,7 @@ def plot_pnt_line_joint_rnt(df: pd.DataFrame, q=1, x='Runtime', h='comb_key', io
             errorbar=("ci", 95),
             sort=True,
         )
-    plot_df = df_long.groupby(by=[h, 'test data', 'phase'], as_index=False).agg(iou=('iou', 'mean'), Runtime=('Runtime', 'mean'))
+    plot_df = df_long.groupby(by=[h, 'test data', 'phase'], as_index=False).agg(iou=('iou', 'mean'), Runtime=('Runtime', 'mean')) # TODO these go to new file
     if q == 5:
         return sns.relplot(
             data=plot_df.sort_values(by='phase'),

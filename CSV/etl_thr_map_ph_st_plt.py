@@ -21,8 +21,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-FVAR = '_thr'
-INPUT_FOLDER = "3"
+FVAR = ''
+INPUT_FOLDER = "5"
 PREF = 'CSV/ETL'
 OUTPUT_FOLDER = f"{PREF}/processed_{INPUT_FOLDER}{FVAR}"
 STATS_FOLDER = f"{PREF}/stats_{INPUT_FOLDER}{FVAR}"
@@ -43,16 +43,15 @@ IOU_BASELINE_GDA = 0.617
 SPLIT_COLUMNS = ['tr_val']
 CORRELATION_THR = 0.25
 
-# Threshold filters
-# Each entry: (column, operator, value)
-# operator one of: ">", ">=", "<", "<=", "==", "!="
 THRESHOLD_FILTERS = [
-    (m, '>', IOU_BASELINE) for m in IOU_COLS_GDA
+    # (m, '>', IOU_BASELINE) for m in IOU_COLS_GDA
 ]
 
 VALUE_MAPPINGS_INLINE: Dict[str, Dict[str, str]] = {
     "val": {
     "/users/project1/pt01299/synt/gda70/train/index_val.csv": "gda",
+    "/users/project1/pt01299/synt/gda70/train/index_val_val.csv": "gda",
+    "/users/project1/pt01299/synt/gda70/train/index_val_tr.csv": "gda",
     "/users/project1/pt01299/synt/segformer_dataset255_all/val/index.csv": "s",
     "/users/project1/pt01299/synt/mix_val.csv": "m",
     "/users/project1/pt01299/synt/DK/osfstorage/dataset_v2/solardk_dataset_neurips_v2/gentofte_trainval/val/index.csv": "dk"
@@ -78,7 +77,7 @@ POSSIBLE_SORT_COLUMNS = IOU_COLS
 GROUP_LIMIT_FRACTION = 0.0
 POSSIBLE_GROUP_SORT_COLUMNS = IOU_COLS
 
-TARGET_VARIABLES = IOU_COLS
+TARGET_VARIABLES = IOU_COLS + ['Runtime']
 
 UNIVARIATE_STATS = ["count", "mean", "std", "50%", "75%", "max"]
 
@@ -141,7 +140,7 @@ def apply_value_mappings(df: pd.DataFrame, mappings: Dict[str, Dict[str, str]] =
         if col not in df.columns:
             continue
         df[col] = df[col].astype(object).map(lambda x: mapping.get(str(x), x))
-        log(f"Applied mapping for column '{col}' with {len(mapping)} entries.")
+        # log(f"Applied mapping for column '{col}' with {len(mapping)} entries.")
     return df
 
 
@@ -167,11 +166,8 @@ def _apply_single_threshold(df: pd.DataFrame, column: str, operator: str, value:
         numeric_value = float(value)
     except Exception:
         numeric_value = None
-    # if series.isna():
-    #     return df
     if numeric_value is not None:
-        # Coerce series to numeric
-        s_num = series # pd.to_numeric(series, errors="coerce")
+        s_num = series
         # Build mask based on operator
         if operator == ">":
             mask = s_num > numeric_value
@@ -221,7 +217,7 @@ def apply_threshold_filters(df: pd.DataFrame, thresholds: List[Tuple[str, str, A
         if df_out.empty:
             log("All rows filtered out by threshold filters.")
             break
-        if df_out.size != df.size: # only the first working filter
+        if df_out.size != df.size: # only the first working filter, 3 before 2, 1 last
             break
     return df_out
 
@@ -262,13 +258,19 @@ def split_dataframe_with_all(df: pd.DataFrame, group_cols: List[str]) -> Dict[st
     - Create groups for each individual column in `group_cols` that exists in the df.
     - Also create combined groups for the full set of existing group columns (as before).
     """
-    groups = {} # {"all": df.copy().reset_index(drop=True)}
+    key = 'all'
+    group_df = df.copy().reset_index(drop=True)
+    groups = {key: group_df}
+    groups[key] = group_df.reset_index(drop=True)
+    groups[key] = drop_empty_and_constant_columns(groups[key])
+    groups[key] = apply_threshold_filters(groups[key], THRESHOLD_FILTERS)
+    groups[key] = group_df.reset_index(drop=True)
     if not group_cols:
-        return {"all": df.copy().reset_index(drop=True)}
+        return groups
     existing_group_cols = [c for c in group_cols if c in df.columns]
     if not existing_group_cols:
         log("No group columns found in file; only 'all' group will be used.")
-        return {"all": df.copy().reset_index(drop=True)}
+        return groups
 
     # Create groups for each individual column
     for col in existing_group_cols:
@@ -303,12 +305,11 @@ def split_dataframe_with_all(df: pd.DataFrame, group_cols: List[str]) -> Dict[st
             groups[key] = apply_threshold_filters(groups[key], THRESHOLD_FILTERS)
             groups[key] = group_df.reset_index(drop=True)
     
-    groups.update({"all": df.copy().reset_index(drop=True)})
     log(f"Split into {len(groups)-1} specific groups (+ 'all') using columns: {existing_group_cols}")
     return groups
 
 
-def compute_univariate_stats(series: pd.Series) -> pd.Series:
+def compute_univariate_stats(series: pd.Series) -> pd.Series: # TODO CI
     numeric = pd.to_numeric(series, errors="coerce")
     desc = numeric.describe(percentiles=[0.5, 0.75])
     stats_map = {
@@ -326,8 +327,6 @@ def compute_correlations(df: pd.DataFrame, target: str) -> pd.Series:
     if target not in df.columns:
         return pd.Series(dtype=float)
     numeric_df = df.select_dtypes(include=[np.number]).copy()
-    # if target not in numeric_df.columns:
-    #     numeric_df[target] = pd.to_numeric(df[target], errors="coerce")
     if target not in numeric_df.columns:
         return pd.Series(dtype=float)
     corrs = {}
@@ -425,7 +424,7 @@ def plot_violin_and_strip(df: pd.DataFrame, x_col: str, y_col: str, out_path: st
     plt.tight_layout()
     plt.savefig(out_path, dpi=PLOT_DPI)
     plt.close()
-    log(f"Saved violin plot: {out_path}")
+    # log(f"Saved violin plot: {out_path}")
 
 
 def plot_box_and_strip(df: pd.DataFrame, x_col: str, y_col: str, out_path: str, y_range: Optional[Tuple[float, float]] = Y_AXIS_RANGE):
@@ -459,7 +458,7 @@ def plot_box_and_strip(df: pd.DataFrame, x_col: str, y_col: str, out_path: str, 
     plt.tight_layout()
     plt.savefig(out_path, dpi=PLOT_DPI)
     plt.close()
-    log(f"Saved box plot: {out_path}")
+    # log(f"Saved box plot: {out_path}")
 
 
 def plot_scatter_with_regression_and_fixed_y(df: pd.DataFrame, x_col: str, y_col: str, out_path: str, y_range: Optional[Tuple[float, float]] = Y_AXIS_RANGE):
@@ -490,7 +489,30 @@ def plot_scatter_with_regression_and_fixed_y(df: pd.DataFrame, x_col: str, y_col
     plt.tight_layout()
     plt.savefig(out_path, dpi=PLOT_DPI)
     plt.close()
-    log(f"Saved scatter/regression plot: {out_path}")
+    # log(f"Saved scatter/regression plot: {out_path}")
+
+
+def plot_hist(df: pd.DataFrame, y_col: str, out_path: str, y_range: Optional[Tuple[float, float]] = Y_AXIS_RANGE):
+    """
+    plot hist for target y
+    """
+    plt.figure(figsize=PLOT_FIGSIZE)
+    sns.set(style="whitegrid")
+    br = (0.6, 1.0)
+    bw = 0.1
+    if y_col == 'Runtime':
+        br = None
+        bw = None
+    try:
+        sns.histplot(df, x=y_col, binwidth=bw, binrange=br)
+    except Exception:
+        log('hist failed')
+    plt.ylabel('cnt')
+    plt.title(f"{y_col}")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=PLOT_DPI)
+    plt.close()
+    log(f"Saved hist: {out_path}")
 
 
 # ---------------------------
@@ -514,14 +536,6 @@ def process_single_file(filepath: str):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    df = sort_and_limit_rows(df, ROW_LIMIT_FRACTION_PER_FILE, POSSIBLE_SORT_COLUMNS)
-
-    # if THRESHOLD_FILTERS:
-    #     df = apply_threshold_filters(df, THRESHOLD_FILTERS)
-    #     if df.empty:
-    #         log("No rows left after threshold filtering; skipping file.")
-    #         return
-
     groups = split_dataframe_with_all(df, SPLIT_COLUMNS)
 
     for group_key, group_df in groups.items():
@@ -534,7 +548,6 @@ def process_single_file(filepath: str):
         out_group_csv = os.path.join(OUTPUT_FOLDER, f"{base_name}__{group_key}.csv")
         try:
             group_df.to_csv(out_group_csv, index=False)
-            # log(f"Saved trimmed group CSV: {out_group_csv}")
         except Exception as e:
             log(f"Failed to save group CSV {out_group_csv}: {e}")
 
@@ -542,7 +555,6 @@ def process_single_file(filepath: str):
 
         for target in TARGET_VARIABLES:
             if target not in group_df.columns:
-                # log(f"Target '{target}' not in group; skipping.")
                 continue
 
             uni_stats = compute_univariate_stats(group_df[target])
@@ -557,14 +569,18 @@ def process_single_file(filepath: str):
             save_correlations(corrs, corr_path)
             log(f"Saved correlations: {corr_path}")
 
+            plot_name = f"{base_name}__{group_key}__{sanitize_for_filename(target)}__hist.png"
+            plot_path = os.path.join(plot_subfolder, plot_name)
+            plot_hist(group_df, target, plot_path, y_range=Y_AXIS_RANGE)
+
             for col in group_df.columns:
                 if col in TARGET_VARIABLES or col == 'ID' or col == 'fn' or group_df[col].nunique(dropna=False) == 1 \
                     or (col in corrs and abs(corrs[col]) < CORRELATION_THR):
-                    log(f"Skipped: {col} at first plotting attempt")
-                    continue
+                    if col != 'Runtime':
+                        # log(f"Skipped: {col} at first plotting attempt")
+                        continue
 
                 treat_as_cat = is_categorical_for_plot(group_df[col], threshold=CATEGORICAL_UNIQUE_THRESHOLD)
-
                 try:
                     plot_name = f"{base_name}__{group_key}__{sanitize_for_filename(target)}_vs_{sanitize_for_filename(col)}__scatter.png"
                     plot_path = os.path.join(plot_subfolder, plot_name)
@@ -586,7 +602,7 @@ def process_single_file(filepath: str):
 def run_pipeline():
     ensure_dirs()
     file_paths = ['CSV/joint_ph_charts/modf/cnc123b.csv', 'CSV/joint_ph_charts/modf/ph123b.csv']
-    file_paths = ['CSV/joint_ph_charts/modf/cnc123b.csv']
+    file_paths = ['CSV/joint_ph_charts/modf_rntg/cnc123b.csv']
     for path in file_paths:
         process_single_file(path)
 

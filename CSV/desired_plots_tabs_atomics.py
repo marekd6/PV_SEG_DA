@@ -222,6 +222,13 @@ def process_diversity_workload(df: pd.DataFrame):
     return df
 
 
+def round_sngl_ph(df: pd.DataFrame, endecja=0):
+    df['dom'] = df['dom'].round(endecja)
+    df['real'] = df['real'].round(endecja)
+    df['dist'] = df['dist'].round(endecja)
+    return df
+
+
 def widen_cont_diversity(df: pd.DataFrame, h=['s_lvl']):
     df = pd.melt(df, id_vars=h+['phase'],
                       value_vars=['iou_SYNT', 'iou_GDA', 'iou_DK'], 

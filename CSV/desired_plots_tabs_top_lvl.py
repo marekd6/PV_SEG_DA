@@ -21,7 +21,7 @@ IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
 
 DIR = 'CSV/joint_ph_charts/modf_rnt_wrk_div_wrkldRntMult'
 SAVEDIR = 'CSV/joint_ph_charts/selected/tr_val_derivs'
-SAVEDIR = 'CSV/joint_ph_charts/selected2/c'
+SAVEDIR = 'CSV/joint_ph_charts/selected2/d'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
@@ -109,27 +109,30 @@ def generalised_joints_4D(df: pd.DataFrame, fl: str):
 
 
 def generalised_concats_4D(df: pd.DataFrame, fl: str):
-    # generalised(df, f'{fl}_9_walltime', 'Runtime', row='phase', row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg) # 3xWTs
-    # generalised(df, f'{fl}_9_workload', 'workload', row='phase', row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg) # 3xWTs
-    pass # 9; wdph, raw rnt/wrkl
+    generalised(df, f'{fl}_9_walltime', 'Runtime', row='phase', hs=['tr_val', 'dom', 'real', 'dist'], row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases) # 3xWTs
+    generalised(df, f'{fl}_9_workload', 'workload', row='phase', hs=['tr_val', 'dom', 'real', 'dist'], row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases) # 3xWTs
 
 
 def generalised_sngl_ph(df: pd.DataFrame, fl: str):
-    generalised(df, f'{fl}_ph_sngl', hs=['tr_val', 'dom', 'real', 'dist'], chs=['bar', 'box', 'violin'], ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359])
-    generalised(df, f'{fl}_runtime', 'Runtime', hs=['tr_val', 'dom', 'real', 'dist'], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases) # 3xWTs
-    generalised(df, f'{fl}_workload', 'workload', hs=['tr_val', 'dom', 'real', 'dist'], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases) # 3xWLs te 2?
+    generalised(df, f'{fl}_ph_sngl', hs=['tr_val', 'dom', 'real', 'dist'], chs=['bar', 'box', 'violin'], ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359], row='phase')
+    generalised(df, f'{fl}_runtime', 'Runtime', hs=['tr_val', 'dom', 'real', 'dist'], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases, row='phase')
+    generalised(df, f'{fl}_workload', 'workload', hs=['tr_val', 'dom', 'real', 'dist'], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases, row='phase')
 
 
 def main():
-    conc123 = pd.read_csv(FILES['concat'])
+    conc123 = round_sngl_ph(pd.read_csv(FILES['concat']))
     ph123 = pd.read_csv(FILES['joint'])
-    ph1 = pd.read_csv(FILES['ph1'])
-    # ph2 = pd.read_csv(FILES['ph2'])
-    # ph3 = pd.read_csv(FILES['ph3'])
+    ph1 = round_sngl_ph(pd.read_csv(FILES['ph1']))
+    ph2 = round_sngl_ph(pd.read_csv(FILES['ph2']))
+    ph3 = round_sngl_ph(pd.read_csv(FILES['ph3']))
 
+    
     ph123 = process_diversity_workload(ph123)
     generalised_joints_4D(ph123, 'joint123')
     generalised_sngl_ph(ph1, 'ph1')
+    generalised_sngl_ph(ph2, 'ph2')
+    generalised_sngl_ph(ph3, 'ph3')
+    generalised_concats_4D(conc123, 'concat123')
 
 
 if __name__ == '__main__':

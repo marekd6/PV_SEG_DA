@@ -240,7 +240,8 @@ def widen_phases(df: pd.DataFrame, x='phase', y='IoU', h=['tr_val'], f='test set
     df[f] = df[f].str.split('_', expand=True)[1] # GDA
     df[x] = pd.to_numeric(df[x], downcast='integer')
     df = df.drop(columns=['col_name'])
-    print(df.columns)
+    if not SAVING:
+        print(df.columns)
     return df
 
 

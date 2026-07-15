@@ -21,7 +21,7 @@ IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
 
 DIR = 'CSV/joint_ph_charts/modf_rnt_wrk_div_wrkldRntMult'
 SAVEDIR = 'CSV/joint_ph_charts/selected/tr_val_derivs'
-SAVEDIR = 'CSV/joint_ph_charts/selected2/b'
+SAVEDIR = 'CSV/joint_ph_charts/selected2/c'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
@@ -47,9 +47,11 @@ FILES = {
 # DS: count uniqe - comb_key only
 
 
-def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=False):
+def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=False, swap_dir_ord=False):
     if SAVING:
-        d = f'{SAVEDIR}/{fu_name}/{keyy}'
+        d = f'{SAVEDIR}/{keyy}/{fu_name}'
+        if swap_dir_ord:
+            d = f'{SAVEDIR}/{fu_name}/{keyy}'
         makedirs(d, exist_ok=True)
         ppp = f'{d}/{chart}.png'
         ppdf = ppp.replace('png', 'csv')
@@ -57,6 +59,7 @@ def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=
             df.to_csv(ppdf)
         else:
             g.savefig(ppp)
+            plt.close()
     elif not sv_df:
         plt.show()
 
@@ -72,7 +75,7 @@ def generalised(df: pd.DataFrame, fu: str, x='phase', y='IoU', col='test set', c
     df_org = df.copy()
     for h in hs:
         xx, hh, xy = x, h, x
-        s, size = None, None
+        s, size, h_ord = None, None, None
         if x == 'hs':
             xx = 'phase'
             hh = None
@@ -80,9 +83,11 @@ def generalised(df: pd.DataFrame, fu: str, x='phase', y='IoU', col='test set', c
         if widen_fu in [widen_runtime_agg, widen_runtime_no_agg, widen_workload_agg, widen_workload_no_agg]:
             df, h_ord = widen_fu(df_org, h)
             s = h
+        elif x != 'phase' and x != 'hs' and widen_fu == widen_phases:
+            df = widen_fu(df_org, h=[h, x])
+            s = h
         else:
             df = widen_fu(df_org, xx, y, [h], col)
-            h_ord = None
         for ch in chs:
             print(xy, y, hh, col, row, ch, h_ord)
             if not SAVING:
@@ -100,16 +105,19 @@ def generalised_joints_4D(df: pd.DataFrame, fl: str):
     generalised(df, f'{fl}_joint_workload', "Workload", chs=['line'], ch_fu=rels, widen_fu=widen_workload_agg) # IoU avg by (WL avg by ph, h, set) | (IoU) by ph, h, set | (WL) by ph, h | 3xWLs
     generalised(df, f'{fl}_9_walltime', 'Walltime', row='phase', row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg) # 3xWTs
     generalised(df, f'{fl}_9_workload', 'Workload', row='phase', row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_workload_no_agg) # 3xWLs
-    generalised(df, f'{fl}_9_joint', x='hs', row='phase', row_ord=[1, 2, 3], chs=['bar', 'box', 'violin']) # by key
+    generalised(df, f'{fl}_9_joint', ch_fu=cats, x='hs', row='phase', row_ord=[1, 2, 3], chs=['bar', 'box', 'violin']) # by key
 
 
 def generalised_concats_4D(df: pd.DataFrame, fl: str):
-    generalised(df, f'{fl}_9_walltime', 'Walltime', row='phase', row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg) # 3xWTs
+    # generalised(df, f'{fl}_9_walltime', 'Runtime', row='phase', row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg) # 3xWTs
+    # generalised(df, f'{fl}_9_workload', 'workload', row='phase', row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg) # 3xWTs
+    pass # 9; wdph, raw rnt/wrkl
 
 
 def generalised_sngl_ph(df: pd.DataFrame, fl: str):
     generalised(df, f'{fl}_ph_sngl', hs=['tr_val', 'dom', 'real', 'dist'], chs=['bar', 'box', 'violin'], ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359])
-    # generalised(df, f'{fl}_workload,walltime_agg', hs=['tr_val', 'dom', 'real', 'dist'], chs=['bar', 'box', 'violin'], ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359])
+    generalised(df, f'{fl}_runtime', 'Runtime', hs=['tr_val', 'dom', 'real', 'dist'], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases) # 3xWTs
+    generalised(df, f'{fl}_workload', 'workload', hs=['tr_val', 'dom', 'real', 'dist'], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases) # 3xWLs te 2?
 
 
 def main():

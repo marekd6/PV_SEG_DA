@@ -6,20 +6,9 @@ saving tabs & charts
 '''
 
 
-# import pandas as pd
 from os import makedirs
 from desired_plots_tabs_atomics import *
 
-
-# SAVING = True
-# SAVING = False
-
-# if SAVING:
-#     import matplotlib
-#     matplotlib.use('Agg')
-#     import matplotlib.pyplot as plt
-# else:
-#     import matplotlib.pyplot as plt
 
 IOU_COLS_GDA = ["3_test_GDA_iou", "3_test/GDA/iou", "1_test/GDA/iou",  
                 "2_test/GDA/iou", "1_test_GDA_iou", "2_test_GDA_iou"]
@@ -30,7 +19,7 @@ IOU_COLS_DK = ["3_test_DK_iou", "1_test/DK/iou", "2_test/DK/iou",
 
 IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
 
-DIR = 'CSV/joint_ph_charts/modf_rnt_wrk_div'
+DIR = 'CSV/joint_ph_charts/modf_rnt_wrk_div_wrkldRntMult'
 SAVEDIR = 'CSV/joint_ph_charts/selected/tr_val_derivs'
 SAVEDIR = 'CSV/joint_ph_charts/selected2/b'
 
@@ -72,28 +61,6 @@ def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=
         plt.show()
 
 
-def joints_4D(df: pd.DataFrame, fu: str):
-    '''
-    widen, plot & agg, save
-
-    x = 'phase'
-    y = 'IoU'
-    col = 'test set'
-    '''
-    x = 'phase'
-    y = 'IoU'
-    col = 'test set'
-    col_order = ["DK", "GDA", "SYNT"]
-    df_org = df.copy()
-    for h in ['cnt_ds', 's_lvl', 'gda_lvl', 'comb_key']:
-        df = widen_phases(df_org, x, y, [h], col)
-        for ch in ['point', 'bar', 'box', 'violin']:
-            g = cats(df, x, y, h, col, col_order, ch=ch)
-            g = plot_prod(g, x, y, h)
-            save_plt_df(df, g, fu, ch, h) # g
-        save_plt_df(df, g, fu, ch, h, True) # df; TODO save wide/agg df
-
-
 def generalised(df: pd.DataFrame, fu: str, x='phase', y='IoU', col='test set', col_order=["DK", "GDA", "SYNT"],
                           row=None, row_ord=None, hs=['cnt_ds', 's_lvl', 'gda_lvl'], 
                           chs=['point', 'bar', 'box', 'violin'], ch_fu=cats, widen_fu=widen_phases, s=None, bs=None):
@@ -110,7 +77,7 @@ def generalised(df: pd.DataFrame, fu: str, x='phase', y='IoU', col='test set', c
             xx = 'phase'
             hh = None
             xy = h
-        if widen_fu in [widen_runtime_agg, widen_runtime_no_agg]:
+        if widen_fu in [widen_runtime_agg, widen_runtime_no_agg, widen_workload_agg, widen_workload_no_agg]:
             df, h_ord = widen_fu(df_org, h)
             s = h
         else:
@@ -119,20 +86,20 @@ def generalised(df: pd.DataFrame, fu: str, x='phase', y='IoU', col='test set', c
         for ch in chs:
             print(xy, y, hh, col, row, ch, h_ord)
             if not SAVING:
-                print(df.head(20))
+                print(df.head(1))
             g = ch_fu(df, xy, y, hh, col, col_order, row, row_ord, ch=ch, h_ord=h_ord, s=s, size=size)
             g = plot_prod(g, xy, y, hh, bs=bs)
             save_plt_df(df, g, fu, ch, h) # g
         save_plt_df(df, g, fu, ch, h, True) # df
-        # save_plt_df(df.groupby(by=h).agg('mean'), g, f'{fu}_agg', ch, h, True) # df
+        # save_plt_df(df.groupby(by=h).agg('mean'), g, f'{fu}_agg', ch, h, True) # df TODO save wide/agg df
 
 
 def generalised_joints_4D(df: pd.DataFrame, fl: str):
     generalised(df, f'{fl}_joint_phases', ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, h, set
     generalised(df, f'{fl}_joint_walltime', "Walltime", chs=['line'], ch_fu=rels, widen_fu=widen_runtime_agg) # IoU avg by (WT avg by ph, h, set) | (IoU) by ph, h, set | (WT) by ph, h | 3xWTs
-    # generalised(df, f'{fl}_joint_workload', ch_fu=rels, widen_fu=widen_runtime_agg, chs=['line'], x="Workload") # IoU avg by (WL avg by ph, h, set) | (IoU) by ph, h, set | (WL) by ph, h | 3xWLs
+    generalised(df, f'{fl}_joint_workload', "Workload", chs=['line'], ch_fu=rels, widen_fu=widen_workload_agg) # IoU avg by (WL avg by ph, h, set) | (IoU) by ph, h, set | (WL) by ph, h | 3xWLs
     generalised(df, f'{fl}_9_walltime', 'Walltime', row='phase', row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg) # 3xWTs
-    # generalised(df, f'{fl}_9_workload', 'Workload', row='phase', row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime) # 3xWLs
+    generalised(df, f'{fl}_9_workload', 'Workload', row='phase', row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_workload_no_agg) # 3xWLs
     generalised(df, f'{fl}_9_joint', x='hs', row='phase', row_ord=[1, 2, 3], chs=['bar', 'box', 'violin']) # by key
 
 
@@ -140,62 +107,10 @@ def generalised_concats_4D(df: pd.DataFrame, fl: str):
     generalised(df, f'{fl}_9_walltime', 'Walltime', row='phase', row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg) # 3xWTs
 
 
-def sngl_ph_tr_val_bar(df: pd.DataFrame, h='tr_val', t=''):
-    '''
-    x = 'phase'
-    y = 'IoU'
-    col = 'test set'
-    ch = 'bar'
-    '''
-    x = 'phase'
-    y = 'IoU'
-    col = 'test set'
-    col_order = ["DK", "GDA", "SYNT"]
-    ch='bar'
-    bs = [0.71, 0.617, 0.359]
-    df = widen_phases(df, x, y, [h], col)
-    g = cats(df, x, y, h, col, col_order, ch=ch)
-    g = plot_prod(g, x, y, h, t=t, bs=bs)
-    return g, df
+def generalised_sngl_ph(df: pd.DataFrame, fl: str):
+    generalised(df, f'{fl}_ph_sngl', hs=['tr_val', 'dom', 'real', 'dist'], chs=['bar', 'box', 'violin'], ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359])
+    # generalised(df, f'{fl}_workload,walltime_agg', hs=['tr_val', 'dom', 'real', 'dist'], chs=['bar', 'box', 'violin'], ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359])
 
-
-def sngl_ph_tr_val_box(df: pd.DataFrame, h='tr_val', t=''):
-    '''
-    x = 'phase'
-    y = 'IoU'
-    col = 'test set'
-    ch = 'box'
-    '''
-    x = 'phase'
-    y = 'IoU'
-    col = 'test set'
-    col_order = ["DK", "GDA", "SYNT"]
-    ch='box'
-    bs = [0.71, 0.617, 0.359]
-    df = widen_phases(df, x, y, [h], col)
-    g = cats(df, x, y, h, col, col_order, ch=ch)
-    g = plot_prod(g, x, y, h, t=t, bs=bs)
-    return g, df
-
-
-def sngl_ph_tr_val_violin(df: pd.DataFrame, h='tr_val', t=''):
-    '''
-    x = 'phase'
-    y = 'IoU'
-    col = 'test set'
-    ch = 'violin'
-    '''
-    x = 'phase'
-    y = 'IoU'
-    col = 'test set'
-    col_order = ["DK", "GDA", "SYNT"]
-    ch='violin'
-    bs = [0.71, 0.617, 0.359]
-    df = widen_phases(df, x, y, [h], col)
-    g = cats(df, x, y, h, col, col_order, ch=ch)
-    g = plot_prod(g, x, y, h, t=t, bs=bs)
-    return g, df
-    
 
 def main():
     conc123 = pd.read_csv(FILES['concat'])
@@ -206,12 +121,7 @@ def main():
 
     ph123 = process_diversity_workload(ph123)
     generalised_joints_4D(ph123, 'joint123')
-    # generalised_concats_4D(conc123, 'concat')
-
-    # for ch, ff in CHARTS_JOINT.items():
-    #     run_catch(ph123, ch+'.csv', ch+'.png', ff)
-    # for ch, ff in CHARTS_SNGL.items():
-    #     run_catch(ph1, ch+'.csv', ch+'.png', ff)
+    generalised_sngl_ph(ph1, 'ph1')
 
 
 if __name__ == '__main__':

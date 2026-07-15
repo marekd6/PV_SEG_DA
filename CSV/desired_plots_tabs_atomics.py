@@ -46,19 +46,15 @@ IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
 # DS: count uniqe - comb_key only
 
 
-RNTMS = ['1_cum_Runtime', '2_cum_Runtime', '3_cum_Runtime']
-
-
 def _clean_df_(df: pd.DataFrame, h=['comb_key']):
     cols = df.columns
-    # cols = list(set(cols) & set(IOU_COLS)) + h
-    cols = list(set(cols) & set(IOU_COLS+h)) # TODO ?
+    cols = list(set(cols) & set(IOU_COLS+h))
     return df[cols]
 
 
 def process_runtime(df: pd.DataFrame, h):
     '''
-    cols
+    add cumulative runtime (walltime), widen phases, rename
     '''
     df['1_cum_Runtime'] = df['Runtime_x']
     df['2_cum_Runtime'] = df['Runtime_y'] + df['1_cum_Runtime']
@@ -77,13 +73,6 @@ def process_runtime(df: pd.DataFrame, h):
     df = df.rename(columns=rename_column)
     df = df.drop(columns=['Runtime'])
     df = df.reset_index(names="row_id")
-    # print(df.head())
-    # print(df.columns)
-    # df = (pd.wide_to_long(df, stubnames=['iou_SYNT', 'iou_GDA', 'iou_DK', 'Runtime'], 
-    #                         i=['row_id', h], j='phase', sep='_', suffix=r"\d+")).reset_index()
-    # print(df.head())
-    # print(df.columns)
-    # return df
     return (pd.wide_to_long(df, stubnames=['iou_SYNT', 'iou_GDA', 'iou_DK', 'Runtime'], 
                             i=['row_id', h], j='phase', sep='_', suffix=r"\d+")).reset_index()
 
@@ -113,7 +102,63 @@ def widen_runtime_no_agg(df: pd.DataFrame, h):
     df = df.rename(columns={'Runtime': 'Walltime', 'iou': 'IoU'})
     ho = df[h].unique()
     ho.sort()
-    print(df.head(20))
+    if not SAVING:
+        print(df.head(20))
+    return df, ho
+
+
+def process_workload(df: pd.DataFrame, h):
+    '''
+    add cumulative workload, widen phases, rename
+    '''
+    df['1_cum_workload'] = df['workload_x']
+    df['2_cum_workload'] = df['workload_y'] + df['1_cum_workload']
+    df['3_cum_workload'] = df['workload'] + df['2_cum_workload']
+    def rename_column(col):
+        m = re.match(r"(\d+)_test_([A-Z]+)_iou$", col) # Match: phase_test_SET_iou
+        if m:
+            phase, set_name = m.groups()
+            return f"iou_{set_name}_{phase}"
+        m = re.match(r"(\d+)_cum_workload$", col) # Match: phase_cum_workload
+        if m:
+            phase = m.group(1)
+            return f"workload_{phase}"
+        return col
+    
+    df = df.rename(columns=rename_column)
+    df = df.drop(columns=['workload'])
+    df = df.reset_index(names="row_id")
+    return (pd.wide_to_long(df, stubnames=['iou_SYNT', 'iou_GDA', 'iou_DK', 'workload'], 
+                            i=['row_id', h], j='phase', sep='_', suffix=r"\d+")).reset_index()
+
+
+def widen_workload_agg(df: pd.DataFrame, h):
+    df = process_workload(df, h)
+    df = pd.melt(df, id_vars=[h, 'phase', 'workload'],
+                      value_vars=['iou_SYNT', 'iou_GDA', 'iou_DK'], 
+                      var_name='test data', value_name='iou')
+    df['test set'] = df['test data'].str.replace('iou_', '')
+    df = df.drop(columns=['test data'])
+    ho = df[h].unique()
+    ho.sort()
+    plot_df_iou = df.groupby(by=[h, 'phase', 'test set'], as_index=False).agg(IoU=('iou', 'mean')) # IoU by ph, set, key
+    plot_df_runtime = df.groupby(by=[h, 'phase'], as_index=False).agg(Workload=('workload', 'mean')) # time by ph, key
+    plot_df = pd.merge(left=plot_df_iou, right=plot_df_runtime, on=[h, 'phase'])
+    return plot_df, ho
+
+
+def widen_workload_no_agg(df: pd.DataFrame, h):
+    df = process_workload(df, h)
+    df = pd.melt(df, id_vars=[h, 'phase', 'workload'],
+                      value_vars=['iou_SYNT', 'iou_GDA', 'iou_DK'], 
+                      var_name='test data', value_name='iou')
+    df['test set'] = df['test data'].str.replace('iou_', '')
+    df = df.drop(columns=['test data'])
+    df = df.rename(columns={'workload': 'Workload', 'iou': 'IoU'})
+    ho = df[h].unique()
+    ho.sort()
+    if not SAVING:
+        print(df.head(1))
     return df, ho
 
 
@@ -188,16 +233,6 @@ def widen_cont_diversity(df: pd.DataFrame, h=['s_lvl']):
     return df
 
 
-# def widen_phases(df: pd.DataFrame, x='phase', y='IoU', h='tr_val', f='test set'):
-#     df = _clean_df_(df, [h])
-#     df = df.melt(id_vars=[h], var_name='col_name', value_name=y) # 3_test_GDA_iou
-#     df[[x, f]] = df['col_name'].str.split('_', n=1, expand=True) # 3, test_GDA_iou
-#     df[f] = df[f].str.split('_', expand=True)[1] # GDA
-#     df[x] = pd.to_numeric(df[x], downcast='integer')
-#     df = df.drop(columns=['col_name'])
-#     return df
-
-
 def widen_phases(df: pd.DataFrame, x='phase', y='IoU', h=['tr_val'], f='test set'):
     df = _clean_df_(df, h)
     df = df.melt(id_vars=h, var_name='col_name', value_name=y) # 3_test_GDA_iou
@@ -207,10 +242,6 @@ def widen_phases(df: pd.DataFrame, x='phase', y='IoU', h=['tr_val'], f='test set
     df = df.drop(columns=['col_name'])
     print(df.columns)
     return df
-
-
-def dist_4d_cont(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='scatter'):
-    pass
 
 
 def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):

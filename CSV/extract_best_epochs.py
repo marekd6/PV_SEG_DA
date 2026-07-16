@@ -29,7 +29,7 @@ def extract_data_from_files(base_folder, target_filenames):
                 try:
                     extracted_value = parse_file(target_file_path)
                     if extracted_value is not None:
-                        results[dir_key] = extracted_value
+                        results[dir_key] = int(extracted_value)
                     else:
                         print(f"Notice: Target text not found in {target_file_path}")
                 except Exception as e:
@@ -41,9 +41,10 @@ def extract_data_from_files(base_folder, target_filenames):
 
 if __name__ == "__main__":
     TARGET_DIRECTORY = "/users/project1/pt01299/synt/fts2"
-    TARGET_DIRECTORY = "/users/project1/pt01299/synt/fts2g"
+    # TARGET_DIRECTORY = "/users/project1/pt01299/synt/fts2g"
     SPECIFIC_FILE_NAMES = ["stats_ph1.txt", "stats_ph2.txt", "stats_ph3.txt"]
     
     final_data = extract_data_from_files(TARGET_DIRECTORY, SPECIFIC_FILE_NAMES)
-    with open('/users/project1/pt01299/synt/comb_stats_g.json', 'w') as f:
+    # with open('/users/project1/pt01299/synt/comb_stats_g.json', 'w') as f:
+    with open('/users/project1/pt01299/synt/comb_stats.json', 'w') as f:
         json.dump(final_data, f, indent=2)

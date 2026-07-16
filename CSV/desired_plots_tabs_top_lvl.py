@@ -19,9 +19,8 @@ IOU_COLS_DK = ["3_test_DK_iou", "1_test/DK/iou", "2_test/DK/iou",
 
 IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
 
-DIR = 'CSV/joint_ph_charts/modf_rnt_wrk_div_wrkldRntMult'
-SAVEDIR = 'CSV/joint_ph_charts/selected/tr_val_derivs'
-SAVEDIR = 'CSV/joint_ph_charts/selected2/d'
+DIR = 'CSV/joint_ph_charts/res_dfs'
+SAVEDIR = 'CSV/joint_ph_charts/selected2/lmt2'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
@@ -53,7 +52,7 @@ def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=
         if swap_dir_ord:
             d = f'{SAVEDIR}/{fu_name}/{keyy}'
         makedirs(d, exist_ok=True)
-        ppp = f'{d}/{chart}.png'
+        ppp = f'{d}/{chart}_{keyy}_{fu_name}.png'
         ppdf = ppp.replace('png', 'csv')
         if sv_df:
             df.to_csv(ppdf)
@@ -101,6 +100,7 @@ def generalised(df: pd.DataFrame, fu: str, x='phase', y='IoU', col='test set', c
 
 def generalised_joints_4D(df: pd.DataFrame, fl: str):
     generalised(df, f'{fl}_joint_phases', ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, h, set
+    generalised(df, f'{fl}_joint_phases', hs=['phase'], ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, h, set
     generalised(df, f'{fl}_joint_walltime', "Walltime", chs=['line'], ch_fu=rels, widen_fu=widen_runtime_agg) # IoU avg by (WT avg by ph, h, set) | (IoU) by ph, h, set | (WT) by ph, h | 3xWTs
     generalised(df, f'{fl}_joint_workload', "Workload", chs=['line'], ch_fu=rels, widen_fu=widen_workload_agg) # IoU avg by (WL avg by ph, h, set) | (IoU) by ph, h, set | (WL) by ph, h | 3xWLs
     generalised(df, f'{fl}_9_walltime', 'Walltime', row='phase', row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg) # 3xWTs
@@ -120,11 +120,11 @@ def generalised_sngl_ph(df: pd.DataFrame, fl: str):
 
 
 def main():
-    conc123 = round_sngl_ph(pd.read_csv(FILES['concat']))
+    conc123 = limit_to_successful(round_sngl_ph(pd.read_csv(FILES['concat'])), cnc=True)
     ph123 = pd.read_csv(FILES['joint'])
-    ph1 = round_sngl_ph(pd.read_csv(FILES['ph1']))
-    ph2 = round_sngl_ph(pd.read_csv(FILES['ph2']))
-    ph3 = round_sngl_ph(pd.read_csv(FILES['ph3']))
+    ph1 = limit_to_successful(round_sngl_ph(pd.read_csv(FILES['ph1'])))
+    ph2 = limit_to_successful(round_sngl_ph(pd.read_csv(FILES['ph2'])))
+    ph3 = limit_to_successful(round_sngl_ph(pd.read_csv(FILES['ph3'])))
 
     
     ph123 = process_diversity_workload(ph123)

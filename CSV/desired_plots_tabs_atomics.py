@@ -229,15 +229,13 @@ def round_sngl_ph(df: pd.DataFrame, endecja=0):
     return df
 
 
-def widen_cont_diversity(df: pd.DataFrame, h=['s_lvl']):
-    df = pd.melt(df, id_vars=h+['phase'],
-                      value_vars=['iou_SYNT', 'iou_GDA', 'iou_DK'], 
-                      var_name='test data', value_name='iou')
-    df['test data'] = df['test data'].str.replace('iou_', '')
-    # plot_df_iou = df.groupby(by=h+['phase', 'test data'], as_index=False).agg(iou=('iou', 'mean')) # IoU by ph, data, key
-    # plot_df_runtime = df.groupby(by=[h, 'phase', 's_lvl'], as_index=False).agg(Runtime=('Runtime', 'mean')) # time by ph, key
-    # plot_df = pd.merge(left=plot_df_iou, right=plot_df_runtime, on=[h, 'phase', 's_lvl'])
-    return df
+def limit_to_successful(df: pd.DataFrame, cnc=False, off=False):
+    if off or cnc:
+        return df
+    iou = list(set(df.columns) & set(sorted(IOU_COLS_GDA)))
+    print(sorted(iou))
+    iou = sorted(iou)[0]
+    return df[df[iou] > 0.617]
 
 
 def widen_phases(df: pd.DataFrame, x='phase', y='IoU', h=['tr_val'], f='test set'):

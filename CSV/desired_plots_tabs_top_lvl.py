@@ -20,7 +20,7 @@ IOU_COLS_DK = ["3_test_DK_iou", "1_test/DK/iou", "2_test/DK/iou",
 IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
 
 DIR = 'CSV/joint_ph_charts/res_dfs'
-SAVEDIR = 'CSV/joint_ph_charts/selected2/e'
+SAVEDIR = 'CSV/joint_ph_charts/selected2/f'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
@@ -33,6 +33,7 @@ FILES = {
 
 HS_SNGL = ['tr_val', 'dom', 'real', 'dist']
 HS_JOINT = ['cnt_ds', 's_lvl', 'gda_lvl']
+HS_ALL = HS_SNGL + HS_JOINT
 
 # DS: workload (Ssize*factor) ===================== * EPOCHS done
 # sub = 0.1 * |S| * sub
@@ -101,17 +102,14 @@ def generalised(df: pd.DataFrame, fu: str, x='phase', y='IoU', col='test set', c
         save_plt_df(df, g, fu, ch, h, True) # df
         # save_plt_df(df.groupby(by=h).agg('mean'), g, f'{fu}_agg', ch, h, True) # df TODO save wide/agg df
 
-def generalised_joints_4D_exper(df: pd.DataFrame, fl: str):
-    generalised(df, f'{fl}_joint_phases', hs=['phase'], ch_fu=cats, widen_fu=widen_phases_id, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, h, set
-    generalised(df, f'{fl}_9_walltime', 'Walltime', row='phase', hs=HS_SNGL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg) # 3xWTs
-
 
 def generalised_joints_4D(df: pd.DataFrame, fl: str):
     generalised(df, f'{fl}_joint_phases', ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, h, set
+    generalised(df, f'{fl}_joint_phases', hs=['phase'], ch_fu=cats, widen_fu=widen_phases_id, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, set
     generalised(df, f'{fl}_joint_walltime', "Walltime", chs=['line'], ch_fu=rels, widen_fu=widen_runtime_agg) # IoU avg by (WT avg by ph, h, set) | (IoU) by ph, h, set | (WT) by ph, h | 3xWTs
     generalised(df, f'{fl}_joint_workload', "Workload", chs=['line'], ch_fu=rels, widen_fu=widen_workload_agg) # IoU avg by (WL avg by ph, h, set) | (IoU) by ph, h, set | (WL) by ph, h | 3xWLs
-    generalised(df, f'{fl}_9_walltime', 'Walltime', row='phase', row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg) # 3xWTs
-    generalised(df, f'{fl}_9_workload', 'Workload', row='phase', row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_workload_no_agg) # 3xWLs
+    generalised(df, f'{fl}_9_walltime', 'Walltime', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg) # 3xWTs
+    generalised(df, f'{fl}_9_workload', 'Workload', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_workload_no_agg) # 3xWLs
     generalised(df, f'{fl}_9_joint', ch_fu=cats, x='hs', row='phase', row_ord=[1, 2, 3], chs=['bar', 'box', 'violin']) # by key
 
 
@@ -136,12 +134,11 @@ def main():
 
     
     ph123 = process_diversity_workload(ph123)
-    generalised_joints_4D_exper(ph123, 'joint123')
-    # generalised_joints_4D(ph123, 'joint123')
-    # generalised_sngl_ph(ph1, 'ph1')
-    # generalised_sngl_ph(ph2, 'ph2')
-    # generalised_sngl_ph(ph3, 'ph3')
-    # generalised_concats_4D(conc123, 'concat123')
+    generalised_joints_4D(ph123, 'joint123')
+    generalised_sngl_ph(ph1, 'ph1')
+    generalised_sngl_ph(ph2, 'ph2')
+    generalised_sngl_ph(ph3, 'ph3')
+    generalised_concats_4D(conc123, 'concat123')
 
 
 if __name__ == '__main__':

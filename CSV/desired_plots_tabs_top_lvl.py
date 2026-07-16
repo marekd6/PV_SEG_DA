@@ -56,8 +56,9 @@ def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=
         d = f'{SAVEDIR}/{keyy}/{fu_name}'
         if swap_dir_ord:
             d = f'{SAVEDIR}/{fu_name}/{keyy}'
+            ppp = f'{d}/{chart}_{keyy}_{fu_name}.png'
         makedirs(d, exist_ok=True)
-        ppp = f'{d}/{chart}_{keyy}_{fu_name}.png'
+        ppp = f'{d}/{keyy}_{fu_name}_{chart}.png'
         ppdf = ppp.replace('png', 'csv')
         if sv_df:
             df.to_csv(ppdf)
@@ -69,8 +70,8 @@ def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=
 
 
 def generalised(df: pd.DataFrame, fu: str, x='phase', y='IoU', col='test set', col_order=["DK", "GDA", "SYNT"],
-                          row=None, row_ord=None, hs=HS_JOINT, 
-                          chs=['point', 'bar', 'box', 'violin'], ch_fu=cats, widen_fu=widen_phases, s=None, bs=None):
+                          row=None, row_ord=None, hs=HS_JOINT, chs=['point', 'bar', 'box', 'violin'], 
+                          ch_fu=cats, widen_fu=widen_phases, s=None, bs=None, tit='', xl=''):
     '''
     widen, plot & agg, save
 
@@ -97,32 +98,31 @@ def generalised(df: pd.DataFrame, fu: str, x='phase', y='IoU', col='test set', c
             if not SAVING:
                 print(df.head(1))
             g = ch_fu(df, xy, y, hh, col, col_order, row, row_ord, ch=ch, h_ord=h_ord, s=s, size=size)
-            g = plot_prod(g, xy, y, hh, bs=bs)
+            g = plot_prod(g, xy, y, hh, bs=bs, t=tit, xl=xl)
             save_plt_df(df, g, fu, ch, h) # g
         save_plt_df(df, g, fu, ch, h, True) # df
         # save_plt_df(df.groupby(by=h).agg('mean'), g, f'{fu}_agg', ch, h, True) # df TODO save wide/agg df
 
 
 def generalised_joints_4D(df: pd.DataFrame, fl: str):
-    generalised(df, f'{fl}_joint_phases', ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, h, set
-    generalised(df, f'{fl}_joint_phases', hs=['phase'], ch_fu=cats, widen_fu=widen_phases_id, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, set
-    generalised(df, f'{fl}_joint_walltime', "Walltime", chs=['line'], ch_fu=rels, widen_fu=widen_runtime_agg) # IoU avg by (WT avg by ph, h, set) | (IoU) by ph, h, set | (WT) by ph, h | 3xWTs
-    generalised(df, f'{fl}_joint_workload', "Workload", chs=['line'], ch_fu=rels, widen_fu=widen_workload_agg) # IoU avg by (WL avg by ph, h, set) | (IoU) by ph, h, set | (WL) by ph, h | 3xWLs
-    generalised(df, f'{fl}_9_walltime', 'Walltime', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg) # 3xWTs
-    generalised(df, f'{fl}_9_workload', 'Workload', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_workload_no_agg) # 3xWLs
-    generalised(df, f'{fl}_9_joint', ch_fu=cats, x='hs', row='phase', row_ord=[1, 2, 3], chs=['bar', 'box', 'violin']) # by key
+    generalised(df, f'{fl}_phase', ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, h, set
+    generalised(df, f'{fl}_phase', hs=['phase'], ch_fu=cats, widen_fu=widen_phases_id, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, set
+    generalised(df, f'{fl}_Walltime', "Walltime", chs=['line'], ch_fu=rels, widen_fu=widen_runtime_agg, xl='[s]') # IoU avg by (WT avg by ph, h, set) | (IoU) by ph, h, set | (WT) by ph, h | 3xWTs
+    generalised(df, f'{fl}_Workload', "Workload", chs=['line'], ch_fu=rels, widen_fu=widen_workload_agg) # IoU avg by (WL avg by ph, h, set) | (IoU) by ph, h, set | (WL) by ph, h | 3xWLs
+    generalised(df, f'{fl}_Walltime', 'Walltime', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg, xl='[s]') # 3xWTs
+    generalised(df, f'{fl}_Workload', 'Workload', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_workload_no_agg) # 3xWLs
+    generalised(df, f'{fl}_phase9', ch_fu=cats, x='hs', row='phase', row_ord=[1, 2, 3], chs=['bar', 'box', 'violin']) # by key
 
 
 def generalised_concats_4D(df: pd.DataFrame, fl: str):
-    generalised(df, f'{fl}_9_runtime', 'Runtime', row='phase', hs=['tr_val', 'dom', 'real', 'dist'], row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases) # 3xWTs
-    generalised(df, f'{fl}_9_runtime', 'Runtime', row='phase', hs=['tr_val', 'dom', 'real', 'dist'], row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases) # 3xWTs
-    generalised(df, f'{fl}_9_workload', 'workload', row='phase', hs=['tr_val', 'dom', 'real', 'dist'], row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases) # 3xWTs
+    generalised(df, f'{fl}_Runtime', 'Runtime', row='phase', hs=HS_SNGL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases, xl='[s]') # 3xWTs
+    generalised(df, f'{fl}_workload', 'workload', row='phase', hs=HS_SNGL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases) # 3xWTs
 
 
 def generalised_sngl_ph(df: pd.DataFrame, fl: str):
-    generalised(df, f'{fl}_ph_sngl', hs=['tr_val', 'dom', 'real', 'dist'], chs=['bar', 'box', 'violin'], ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359], row='phase')
-    generalised(df, f'{fl}_runtime', 'Runtime', hs=['tr_val', 'dom', 'real', 'dist'], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases, row='phase')
-    generalised(df, f'{fl}_workload', 'workload', hs=['tr_val', 'dom', 'real', 'dist'], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases, row='phase')
+    generalised(df, f'{fl}_phase', hs=HS_SNGL, chs=['bar', 'box', 'violin'], ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359], row='phase')
+    generalised(df, f'{fl}_Runtime', 'Runtime', hs=HS_SNGL, chs=['scatter'], ch_fu=rels, widen_fu=widen_phases, row='phase', xl='[s]')
+    generalised(df, f'{fl}_workload', 'workload', hs=HS_SNGL, chs=['scatter'], ch_fu=rels, widen_fu=widen_phases, row='phase')
 
 
 def main():
@@ -134,11 +134,11 @@ def main():
 
     
     ph123 = process_diversity_workload(ph123)
-    generalised_joints_4D(ph123, 'joint123')
+    generalised_joints_4D(ph123, 'joint')
     generalised_sngl_ph(ph1, 'ph1')
     generalised_sngl_ph(ph2, 'ph2')
     generalised_sngl_ph(ph3, 'ph3')
-    generalised_concats_4D(conc123, 'concat123')
+    generalised_concats_4D(conc123, 'concat')
 
 
 if __name__ == '__main__':

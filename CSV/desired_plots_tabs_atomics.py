@@ -8,11 +8,12 @@ saving tabs & charts
 
 import pandas as pd
 import seaborn as sns
+import seaborn.objects as so
 import re
 
 
 SAVING = True
-# SAVING = False
+SAVING = False
 
 LMT = False
 
@@ -373,7 +374,7 @@ def ucats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_o
 #     return g
 
 
-def plot_prod(g, x, y, h, t='', bs=None): # TODO title, labels
+def plot_prod(g, x, y, h, t='', bs=None, xl=''): # TODO title, labels
     '''
     labels, base lines
     '''
@@ -381,6 +382,12 @@ def plot_prod(g, x, y, h, t='', bs=None): # TODO title, labels
         # g.set(ylim=(0.35, 0.85))
         for ax, b in zip(g.axes.flatten(), bs):
             ax.axhline(b, ls='--')
+    if xl != '':
+        g.set_xlabels(x+' '+xl)
+        for ax in g.axes.flatten():
+            ax.set_xscale('log')
+    if t != '':
+        g.set(title=t)
     # g.set_titles(row_template="{row_name}", col_template="{col_name}")
     # g.set(title=t)
     # g.set(title='IoUs by amount of gda in setups')

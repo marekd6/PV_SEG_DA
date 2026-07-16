@@ -12,7 +12,9 @@ import re
 
 
 SAVING = True
-# SAVING = False
+SAVING = False
+
+LMT = False
 
 if SAVING:
     import matplotlib
@@ -229,7 +231,7 @@ def round_sngl_ph(df: pd.DataFrame, endecja=0):
     return df
 
 
-def limit_to_successful(df: pd.DataFrame, cnc=False, off=False):
+def limit_to_successful(df: pd.DataFrame, cnc=False, off=not LMT):
     if off or cnc:
         return df
     iou = list(set(df.columns) & set(sorted(IOU_COLS_GDA)))
@@ -248,6 +250,10 @@ def widen_phases(df: pd.DataFrame, x='phase', y='IoU', h=['tr_val'], f='test set
     if not SAVING:
         print(df.columns)
     return df
+
+
+def widen_phases_id(df: pd.DataFrame, x='phase', y='IoU', h=['ID'], f='test set'):
+    return widen_phases(df, x, y, ['ID'], f)
 
 
 def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
@@ -292,6 +298,79 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         row_order=r_ord,
         palette=sns.color_palette(),
     )
+
+
+def ucats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
+    df = df[df['test set'] == 'GDA']
+    return sns.lineplot(
+        data=df,
+        x=x,
+        y=y,
+        hue=h,
+        hue_order=h_ord,
+        units=h,
+        estimator=None,
+        palette=sns.color_palette(),
+    )
+    return sns.catplot(
+        data=df,
+        kind=ch,
+        x=x,
+        y=y,
+        hue=h,
+        hue_order=h_ord,
+        units=h,
+        col=c,
+        col_order=c_ord,
+        row=r,
+        row_order=r_ord,
+        palette=sns.color_palette(),
+    )
+
+
+# def lineplt_ci(df: pd.DataFrame, x, y, h, c='test set', c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
+#     summary = (
+#         df.groupby([c, "phase"])
+#         .agg(
+#             mean_x=(x, "mean"),
+#             mean_y=(y, "mean"),
+#             y_low=(y, lambda v: percentile(v, 2.5)),
+#             y_high=(y, lambda v: percentile(v, 97.5))
+#         )
+#         .reset_index()
+#     )
+#     df = df.sort_values([c, h, "phase"])
+#     summary = summary.sort_values([c, "phase"])
+
+#     # Create facet grid
+#     g = sns.FacetGrid(df, col=c, hue=h)
+
+#     def draw_trajectories(data, color, **kwargs):
+#         # Draw individual trajectories
+#         plt.plot(
+#             data[x], data[y],
+#             marker="o",
+#             # markersize=4,
+#             # linewidth=1.2,
+#             color=color,
+#             alpha=0.7
+#         )
+
+#     # Draw individual trajectories
+#     g.map_dataframe(draw_trajectories)
+
+#     # Draw confidence ribbon + mean trajectory inside each facet
+#     for ax, (col_val, sub) in zip(g.axes.flat, summary.groupby(c)):
+#         ax.fill_between(
+#             sub["mean_x"], sub["y_low"], sub["y_high"],
+#             color="black", alpha=0.15
+#         )
+#         ax.plot(
+#             sub["mean_x"], sub["mean_y"],
+#             color="black", linewidth=2.5, label="Mean trajectory"
+#         )
+
+#     return g
 
 
 def plot_prod(g, x, y, h, t='', bs=None): # TODO title, labels

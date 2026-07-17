@@ -19,8 +19,8 @@ IOU_COLS_DK = ["3_test_DK_iou", "1_test/DK/iou", "2_test/DK/iou",
 
 IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
 
-DIR = 'CSV/joint_ph_charts/res_dfs2'
-SAVEDIR = 'CSV/joint_ph_charts/selected2/h'
+DIR = 'CSV/joint_ph_charts/res_dfs3'
+SAVEDIR = 'CSV/joint_ph_charts/selected2/i'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
@@ -105,12 +105,17 @@ def generalised(df: pd.DataFrame, fu: str, x='phase', y='IoU', col='test set', c
 
 
 def generalised_joints_4D(df: pd.DataFrame, fl: str):
+    # generalised(df, f'{fl}_phase', y='Workload', hs=['phase'], ch_fu=cats, widen_fu=widen_phases_h) # IoU avg+CI by ph, set
     generalised(df, f'{fl}_phase', ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, h, set
     generalised(df, f'{fl}_phase', hs=['phase'], ch_fu=cats, widen_fu=widen_phases_id, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, set
     generalised(df, f'{fl}_Walltime', "Walltime", chs=['line'], ch_fu=rels, widen_fu=widen_runtime_agg, xl='[s]') # IoU avg by (WT avg by ph, h, set) | (IoU) by ph, h, set | (WT) by ph, h | 3xWTs
     generalised(df, f'{fl}_Workload', "Workload", chs=['line'], ch_fu=rels, widen_fu=widen_workload_agg) # IoU avg by (WL avg by ph, h, set) | (IoU) by ph, h, set | (WL) by ph, h | 3xWLs
+    # generalised(df, f'{fl}_effective_Workload', "Workload", chs=['line'], ch_fu=rels, widen_fu=widen_workload_agg) # IoU avg by (WL avg by ph, h, set) | (IoU) by ph, h, set | (WL) by ph, h | 3xWLs
     generalised(df, f'{fl}_Walltime', 'Walltime', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg, xl='[s]') # 3xWTs
     generalised(df, f'{fl}_Workload', 'Workload', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_workload_no_agg) # 3xWLs
+    # generalised(df, f'{fl}_Workload', y='Sworkload', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], ch_fu=cats, widen_fu=widen_workload_no_agg) # 3xWLs
+    # generalised(df, f'{fl}_Workload', y='Workload', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], ch_fu=cats, widen_fu=widen_workload_no_agg) # 3xWLs
+    # generalised(df, f'{fl}_Workload', 'Sworkload', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_workload_no_agg) # 3xWLs
     generalised(df, f'{fl}_phase9', ch_fu=cats, x='hs', row='phase', row_ord=[1, 2, 3], chs=['bar', 'box', 'violin']) # by key
 
 
@@ -139,6 +144,18 @@ def main():
     generalised_sngl_ph(ph2, 'ph2')
     generalised_sngl_ph(ph3, 'ph3')
     generalised_concats_4D(conc123, 'concat')
+
+
+    # print(widen_phases_id(ph123, y='Workload', h=['s_lvl']).head())
+    # g = sns.catplot(
+    #     data=widen_phases_id(ph123, y='Workload', h=['s_lvl']),
+    #     x='phase',
+    #     y='Workload',
+    #     hue='s_lvl',
+    #     col='test set',
+    #     kind='bar'
+    # )
+    # plt.show()
 
 
 if __name__ == '__main__':

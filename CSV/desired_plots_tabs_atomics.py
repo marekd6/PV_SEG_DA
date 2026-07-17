@@ -256,6 +256,9 @@ def widen_phases(df: pd.DataFrame, x='phase', y='IoU', h=['tr_val'], f='test set
 def widen_phases_id(df: pd.DataFrame, x='phase', y='IoU', h=['ID'], f='test set'):
     return widen_phases(df, x, y, ['ID'], f)
 
+def widen_phases_h(df: pd.DataFrame, x='phase', y='IoU', h=['ID'], f='test set'):
+    return widen_phases(df, x, y, h, f)
+
 
 def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
     '''

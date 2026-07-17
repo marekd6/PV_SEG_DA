@@ -19,8 +19,8 @@ IOU_COLS_DK = ["3_test_DK_iou", "1_test/DK/iou", "2_test/DK/iou",
 
 IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
 
-DIR = 'CSV/joint_ph_charts/res_dfs'
-SAVEDIR = 'CSV/joint_ph_charts/selected2/f'
+DIR = 'CSV/joint_ph_charts/res_dfs2'
+SAVEDIR = 'CSV/joint_ph_charts/selected2/h'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
@@ -32,7 +32,7 @@ FILES = {
 
 
 HS_SNGL = ['tr_val', 'dom', 'real', 'dist']
-HS_JOINT = ['cnt_ds', 's_lvl', 'gda_lvl']
+HS_JOINT = ['cnt_ds', 's_lvl', 'gda_lvl', 'dk_lvl']
 HS_ALL = HS_SNGL + HS_JOINT
 
 # DS: workload (Ssize*factor) ===================== * EPOCHS done

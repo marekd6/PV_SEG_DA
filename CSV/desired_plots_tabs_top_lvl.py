@@ -33,6 +33,7 @@ FILES = {
 
 HS_SNGL = ['tr_val', 'dom', 'real', 'dist']
 HS_JOINT = ['cnt_ds', 's_lvl', 'gda_lvl', 'dk_lvl']
+HS_CUM = ['cnt_ds_cum', 's_lvl_cum', 'gda_lvl_cum', 'dk_lvl_cum'] # TODO by cum aggs
 HS_ALL = HS_SNGL + HS_JOINT
 
 # DS: workload (Ssize*factor) ===================== * EPOCHS done
@@ -104,7 +105,7 @@ def generalised(df: pd.DataFrame, fu: str, x='phase', y='IoU', col='test set', c
         # save_plt_df(df.groupby(by=h).agg('mean'), g, f'{fu}_agg', ch, h, True) # df TODO save wide/agg df
 
 
-def generalised_joints_4D(df: pd.DataFrame, fl: str):
+def generalised_joints_4D(df: pd.DataFrame, fl: str): # TODO split y=IoU and other; dist vs. raw vs. line
     # generalised(df, f'{fl}_phase', y='Workload', hs=['phase'], ch_fu=cats, widen_fu=widen_phases_h) # IoU avg+CI by ph, set
     generalised(df, f'{fl}_phase', ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, h, set
     generalised(df, f'{fl}_phase', hs=['phase'], ch_fu=cats, widen_fu=widen_phases_id, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, set

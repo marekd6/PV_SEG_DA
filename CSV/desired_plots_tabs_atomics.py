@@ -304,7 +304,7 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
     )
 
 
-def ucats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
+def ucats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None): # TODO more line plts?
     df = df[df['test set'] == 'GDA']
     return sns.lineplot(
         data=df,

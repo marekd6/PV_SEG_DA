@@ -10,10 +10,11 @@ import pandas as pd
 import seaborn as sns
 import seaborn.objects as so
 import re
+from numpy import mean
 
 
 SAVING = True
-# SAVING = False
+SAVING = False
 
 LMT = False
 
@@ -23,6 +24,7 @@ if SAVING:
     import matplotlib.pyplot as plt
 else:
     import matplotlib.pyplot as plt
+from matplotlib import collections
 
 IOU_COLS_GDA = ["3_test_GDA_iou", "3_test/GDA/iou", "1_test/GDA/iou",  
                 "2_test/GDA/iou", "1_test_GDA_iou", "2_test_GDA_iou"]
@@ -260,6 +262,171 @@ def widen_phases_h(df: pd.DataFrame, x='phase', y='IoU', h=['ID'], f='test set')
     return widen_phases(df, x, y, h, f)
 
 
+def widen_phases_h2(df: pd.DataFrame, x='phase', y='IoU', h=['ID'], f='test set'):
+    df = _clean_df_(df, h)
+    # df = df.dropna(subset=h)
+    # df[h[0]] = df[h[0]].fillna('100')
+    df = df.fillna({h[0]: '100'}) # TODO nans
+    df[h[0]] = df[h[0]].fillna('100')
+
+    
+    df = df.melt(id_vars=h, var_name='col_name', value_name=y) # 3_test_GDA_iou
+    print(df.head(3))
+    df[[x, f]] = df['col_name'].str.split('_', n=1, expand=True) # 3, test_GDA_iou
+    df[f] = df[f].str.split('_', expand=True)[1] # GDA
+    df[x] = pd.to_numeric(df[x], downcast='integer')
+    print(df.head(2))
+    print(df.count()-df.size)
+    df = df.drop(columns=['col_name'])    
+    if not SAVING:
+        print(df.columns)
+        eee = df.groupby(['phase', f])[h[0]].unique()
+        print(eee.head())
+    df[h[0]] = pd.Categorical(
+        df[h[0]],
+        categories=['mix', 'composite', '15', '25', '35', '45', '55', '65', '75', '100'],
+        ordered=True,
+    )
+    return df
+
+
+def widen_phases_h3(df: pd.DataFrame, x='phase', y='IoU', h=['ID'], f='test set'):
+    df = widen_res_all_h(df)
+    # df = df.dropna(subset=h)
+    # df[h[0]] = df[h[0]].fillna('100')
+    df = df.fillna({h[0]: '100'}) # TODO nans
+    df[h[0]] = df[h[0]].fillna('100')
+
+    df[[x, f]] = df['phase_set'].str.split('_', n=1, expand=True) # 3, test_GDA_iou
+    df[f] = df[f].str.split('_', expand=True)[1] # GDA
+    df[x] = pd.to_numeric(df[x], downcast='integer')
+    print(df.head(2))
+    print(df.count()-df.size)
+    # df = df.drop(columns=['col_name'])    
+    if not SAVING:
+        print(df.columns)
+        eee = df.groupby(['phase', f])[h[0]].unique()
+        print(eee.head())
+    df[h[0]] = pd.Categorical(
+        df[h[0]],
+        categories=['mix', 'composite', '15', '25', '35', '45', '55', '65', '75', '100'],
+        ordered=True,
+    )
+    return df
+
+
+def widen_res_all_h(df: pd.DataFrame, measurements=IOU_COLS):
+    '''
+    best to be used with a single-phase df or a concat, not joint
+
+    :param list measurements: cols with results
+    '''
+    print(len(df.columns))
+    measurements = list(set(df.columns) & set(measurements))
+    hs = list(set(df.columns) - set(measurements))
+    print(df.head())
+    print('tak----------------------------------------------------------------------------------')
+    df = pd.melt(df, id_vars=hs, value_vars=measurements, var_name='phase_set', value_name='IoU')
+    print(df.columns)
+    print(len(df.columns))
+    print('na pewno00000000000000000000000000000000000000000')
+    print(df.head())
+    # value_vars = [c for c in df.columns if re.match(r'.*(_x|_y)$', c)] # - ['phase_set']
+    # value_vars.remove('phase_set')
+    # value_vars.remove('IoU')
+    return df
+
+
+# def the_major_col_cleaning(df: pd.DataFrame):
+#     cols = df.columns
+
+#     # group 1: suffix-based (_x, _y, or none)
+#     suffix_cols = [c for c in cols if c.endswith('_x') or c.endswith('_y') or not any(c.endswith(s) for s in ['_x','_y'])]
+
+#     # group 2: prefix-based (1_, 2_, 3_)
+#     prefix_cols = [c for c in cols if c.startswith(('1_', '2_', '3_'))]
+
+#     # group 3: untouched columns
+#     id_cols = ['id', 'date', 'category']   # example; adjust to your real identifiers
+
+#     clean_suffix = {}
+#     for c in suffix_cols:
+#         if c.endswith('_x') or c.endswith('_y'):
+#             clean_suffix[c] = c
+#         else:
+#             clean_suffix[c] = f"{c}_base"
+
+
+#     clean_prefix = {}
+#     for c in prefix_cols:
+#         num, name = c.split('_', 1)
+#         clean_prefix[c] = f"{name}_{num}"
+
+
+#     rename_map = {**clean_suffix, **clean_prefix}
+#     return df.rename(columns=rename_map)
+
+
+def the_major_widening(df: pd.DataFrame):
+    # df = the_major_col_cleaning(df)
+    # df = pd.wide_to_long(df, stubnames=['var1'], i='id', j='suffix', sep='_')
+    # return pd.wide_to_long(df, stubnames=['varA'], i='id', j='num', sep='_')
+    rename_map = {}
+
+    for col in df.columns:
+        # untouched columns
+        if col in ['id', 'date', 'category']:
+            continue
+
+        # suffix-based: _x, _y, blank
+        if col.endswith('_x'):
+            base = col[:-2]
+            num = 1
+        elif col.endswith('_y'):
+            base = col[:-2]
+            num = 2
+        elif re.match(r'.*_[0-9]+$', col):
+            # already numeric suffix
+            base, num = col.rsplit('_', 1)
+            num = int(num)
+        # elif col.endswith('_base'):
+        #     base = col[:-5]
+        #     num = 3
+        elif col.endswith('_'):
+            # avoid accidental trailing underscores
+            base = col.rstrip('_')
+            num = 3
+        else:
+            # blank suffix → 3
+            base = col
+            num = 3
+
+        # prefix-based: 1_, 2_, 3_
+        m = re.match(r'([1-3])_(.+)', col)
+        if m:
+            num = int(m.group(1))
+            base = m.group(2)
+
+        rename_map[col] = f"{base}_{num}"
+
+    df = df.rename(columns=rename_map)
+
+    df = pd.wide_to_long(
+        df,
+        stubnames=['var1', 'varA'],   # all base names
+        i=['id'],                     # identifiers
+        j='phase',                      # extracted number
+        sep='_'
+    ).reset_index() # test_SYNT_iou; 2
+
+    ious = ['test_SYNT_iou', 'test_GDA_iou', 'test_DK_iou'] # list(set(df.columns) & set(IOU_COLS))
+    hs = list(set(df.columns) - set(ious))
+    df = pd.melt(df, id_vars=hs, value_vars=ious, var_name='phase_set', value_name='IoU')
+    df['test set'] = df['phase_set'].str.split('_', n=1, expand=True)[0]
+    df = df.drop(columns=['phase_set'])
+    return df
+
+
 def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
     '''
     all rel plots
@@ -302,6 +469,37 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         row_order=r_ord,
         palette=sns.color_palette(),
     )
+
+
+def cats_endlabs(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
+    g = cats(df, x, y, h, c, c_ord, r, r_ord, h_ord, s, ch, size)
+    # for x in range(len(h_ord)):
+    #     g.text(x, -1, va='bottom')
+    #     g.text(x, 1, va='top')
+    # for ax in g.axes.flat:
+    #     violins = [c for c in ax.collections if isinstance(c, matplotlib.collections.PolyCollection)]
+    #     for v in violins:
+    #         verts = v.get_paths()[0].vertices
+    #         y_vals = verts[:, 1]
+    #         ymin, ymax = y_vals.min(), y_vals.max()
+    #         x_centre = 1
+    #         ax.text(x_centre, ymin, va=bottom)
+    #         ax.text(x_centre, ymax, va=top)
+    # for ax in g.axes.flat:
+    #     violins = [c for c in ax.collections if isinstance(c, collections.PolyCollection)]
+        
+    #     for v in violins:
+    #         verts = v.get_paths()[0].vertices
+    #         y_vals = verts[:, 1]
+    #         ymin, ymax = y_vals.min(), y_vals.max()
+            
+    #         # x-position of the violin center
+    #         x_center = mean(verts[:, 0])
+            
+    #         ax.text(x_center, ymin, f"{ymin:.1f}", ha="center", va="top")
+    #         ax.text(x_center, ymax, f"{ymax:.1f}", ha="center", va="bottom")
+    return g
+
 
 
 def ucats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None): # TODO more line plts?
@@ -396,4 +594,17 @@ def plot_prod(g, x, y, h, t='', bs=None, xl=''): # TODO title, labels
     # g.set(title='IoUs by amount of gda in setups')
     # g.set_titles("{col_name}")
     # g.set_axis_labels(x, y)
+    for ax in g.axes.flat:
+        violins = [c for c in ax.collections if isinstance(c, collections.PolyCollection)]
+        
+        for v in violins:
+            verts = v.get_paths()[0].vertices
+            y_vals = verts[:, 1]
+            ymin, ymax = y_vals.min(), y_vals.max()
+            
+            # x-position of the violin center
+            x_center = mean(verts[:, 0])
+            
+            ax.text(x_center, ymin, f"{ymin:.3f}", ha="center", va="top")
+            ax.text(x_center, ymax, f"{ymax:.3f}", ha="center", va="bottom")
     return g

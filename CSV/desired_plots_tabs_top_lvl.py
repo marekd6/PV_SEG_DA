@@ -25,6 +25,7 @@ SAVEDIR = 'CSV/joint_ph_charts/selected2/i'
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
     'ph1': f'{DIR}/proc_ph1.csv',
+    'subs_16': f'{DIR}/subs_16.csv',
     'ph2': f'{DIR}/proc_ph2.csv',
     'ph3': f'{DIR}/proc_ph3.csv',
     'concat': f'{DIR}/cnc123b.csv',
@@ -35,6 +36,8 @@ HS_SNGL = ['tr_val', 'dom', 'real', 'dist']
 HS_JOINT = ['cnt_ds', 's_lvl', 'gda_lvl', 'dk_lvl']
 HS_CUM = ['cnt_ds_cum', 's_lvl_cum', 'gda_lvl_cum', 'dk_lvl_cum'] # TODO by cum aggs
 HS_ALL = HS_SNGL + HS_JOINT
+
+CH_BBV = ['bar', 'box', 'violin']
 
 # DS: workload (Ssize*factor) ===================== * EPOCHS done
 # sub = 0.1 * |S| * sub
@@ -92,6 +95,21 @@ def generalised(df: pd.DataFrame, fu: str, x='phase', y='IoU', col='test set', c
         elif x != 'phase' and x != 'hs' and widen_fu == widen_phases:
             df = widen_fu(df_org, h=[h, x])
             s = h
+        elif widen_fu in [widen_phases_h2, widen_phases_h3]:
+            df = widen_fu(df, h=[h])
+            h_ord = df[h].unique()
+            print(h_ord)
+            h_ord_n = [int(v) for v in h_ord if not v in ['composite', 'mix'] and not pd.isna(v)]
+            # h_ord_n = [v for v in h_ord if not isinstance(v, str)]
+            h_ord_cm = [v for v in h_ord if v in ['composite', 'mix']]
+            # h_ord_cm = [v for v in h_ord if isinstance(v, str)]
+            # h_ord_n.sort()
+            h_ord_n = sorted(h_ord_n)
+            print(h_ord_n)
+            print(h_ord_cm)
+            h_ord = h_ord_cm + [str(v) for v in h_ord_n]
+            print(h_ord)
+            print(df[h].dtype)
         else:
             df = widen_fu(df_org, xx, y, [h], col)
         for ch in chs:
@@ -117,7 +135,7 @@ def generalised_joints_4D(df: pd.DataFrame, fl: str): # TODO split y=IoU and oth
     # generalised(df, f'{fl}_Workload', y='Sworkload', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], ch_fu=cats, widen_fu=widen_workload_no_agg) # 3xWLs
     # generalised(df, f'{fl}_Workload', y='Workload', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], ch_fu=cats, widen_fu=widen_workload_no_agg) # 3xWLs
     # generalised(df, f'{fl}_Workload', 'Sworkload', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_workload_no_agg) # 3xWLs
-    generalised(df, f'{fl}_phase9', ch_fu=cats, x='hs', row='phase', row_ord=[1, 2, 3], chs=['bar', 'box', 'violin']) # by key
+    generalised(df, f'{fl}_phase9', ch_fu=cats, x='hs', row='phase', row_ord=[1, 2, 3], chs=CH_BBV) # by key
 
 
 def generalised_concats_4D(df: pd.DataFrame, fl: str):
@@ -126,25 +144,31 @@ def generalised_concats_4D(df: pd.DataFrame, fl: str):
 
 
 def generalised_sngl_ph(df: pd.DataFrame, fl: str):
-    generalised(df, f'{fl}_phase', hs=HS_SNGL, chs=['bar', 'box', 'violin'], ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359], row='phase')
-    generalised(df, f'{fl}_Runtime', 'Runtime', hs=HS_SNGL, chs=['scatter'], ch_fu=rels, widen_fu=widen_phases, row='phase', xl='[s]')
-    generalised(df, f'{fl}_workload', 'workload', hs=HS_SNGL, chs=['scatter'], ch_fu=rels, widen_fu=widen_phases, row='phase')
+    # generalised(df, f'{fl}_phase', hs=HS_SNGL, chs=['bar', 'box', 'violin'], ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359], row='phase')
+    # generalised(df, f'{fl}_Runtime', 'Runtime', hs=HS_SNGL, chs=['scatter'], ch_fu=rels, widen_fu=widen_phases, row='phase', xl='[s]')
+    # generalised(df, f'{fl}_workload', 'workload', hs=HS_SNGL, chs=['scatter'], ch_fu=rels, widen_fu=widen_phases, row='phase')
+    if fl in ['subs_16', 'ph1']:
+        # generalised(df, f'{fl}_sub', 'sub', hs=['sub'], row='phase', chs=CH_BBV, ch_fu=cats_endlabs, widen_fu=widen_phases_h2) # only ph1
+        generalised(df, f'{fl}_sub', 'sub', hs=['sub'], row='phase', chs=CH_BBV, ch_fu=cats_endlabs, widen_fu=widen_phases_h3) # only ph1
 
 
 def main():
     conc123 = limit_to_successful(round_sngl_ph(pd.read_csv(FILES['concat'])), cnc=True)
     ph123 = pd.read_csv(FILES['joint'])
     ph1 = limit_to_successful(round_sngl_ph(pd.read_csv(FILES['ph1'])))
+    subs_16 = limit_to_successful(round_sngl_ph(pd.read_csv(FILES['subs_16'])))
     ph2 = limit_to_successful(round_sngl_ph(pd.read_csv(FILES['ph2'])))
     ph3 = limit_to_successful(round_sngl_ph(pd.read_csv(FILES['ph3'])))
 
+    # ph1 = widen_res_all_h(ph1)
     
-    ph123 = process_diversity_workload(ph123)
-    generalised_joints_4D(ph123, 'joint')
+    # ph123 = process_diversity_workload(ph123)
+    # generalised_joints_4D(ph123, 'joint')
     generalised_sngl_ph(ph1, 'ph1')
-    generalised_sngl_ph(ph2, 'ph2')
-    generalised_sngl_ph(ph3, 'ph3')
-    generalised_concats_4D(conc123, 'concat')
+    # generalised_sngl_ph(subs_16, 'subs_16') # subs
+    # generalised_sngl_ph(ph2, 'ph2')
+    # generalised_sngl_ph(ph3, 'ph3')
+    # generalised_concats_4D(conc123, 'concat')
 
 
     # print(widen_phases_id(ph123, y='Workload', h=['s_lvl']).head())

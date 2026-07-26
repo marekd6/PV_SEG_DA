@@ -24,7 +24,7 @@ if SAVING:
     import matplotlib.pyplot as plt
 else:
     import matplotlib.pyplot as plt
-from matplotlib import collections
+from matplotlib import collections, axes
 
 IOU_COLS_GDA = ["3_test_GDA_iou", "3_test/GDA/iou", "1_test/GDA/iou",  
                 "2_test/GDA/iou", "1_test_GDA_iou", "2_test_GDA_iou"]
@@ -46,6 +46,9 @@ GLOB_FIXED_COLS = ['comb_key', 'trains', 'Sworkload', 'cnt_ds', 's_lvl', 'dk_lvl
 
 
 def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=False, off=not LMT, endecja=0):
+    '''
+    many operations, mainly df widening
+    '''
     df = pd.read_csv(pth)
     df = df.rename(columns={'Unnamed: 0': 'entry_id'})
     st = SNGL_COLS_BASES
@@ -76,6 +79,13 @@ def process_comb_cum_calcs(df: pd.DataFrame):
     df['1_Workload'] = df['workload_x']
     df['2_Workload'] = df['workload_y'] + df['1_Workload']
     df['3_Workload'] = df['workload'] + df['2_Workload']
+
+    # TODO analogicznie jak lvl i jak cum; tr_val zamiast comb_key
+    df['s_lvl'] = [x.count('s') for x in df['comb_key']] # how many SYNTs: s, sub, subm
+    df['s_lvl'] += [x.count('_m') for x in df['comb_key']] # plus how many MIXs: _m
+    df['dk_lvl'] = [x.count('dk') for x in df['comb_key']] # how many DKs: dk
+    df['dk_lvl'] += [x.count('m') for x in df['comb_key']] # plus how many MIXs: m
+    df['gda_lvl'] = [x.count('gda') for x in df['comb_key']] # how many GDAs
 
     df['Sworkload'] = df['3_Workload'] # sum
 
@@ -129,6 +139,9 @@ def limit_to_successful(df: pd.DataFrame, cnc=False, off=not LMT):
 
 
 def the_major_widening(df: pd.DataFrame, stubs=SNGL_COLS_BASES):
+    '''
+    unify naming convention of cols, widen params, widen IoUs
+    '''
     rename_map = {}
     for col in df.columns:
         # untouched columns
@@ -180,40 +193,14 @@ def the_major_widening(df: pd.DataFrame, stubs=SNGL_COLS_BASES):
     df = pd.melt(df, id_vars=hs, value_vars=RAW_IOU_COLS, var_name='phase_set', value_name='IoU')
     df['test set'] = df['phase_set'].str.split('_', n=2, expand=True)[1]
     df = df.drop(columns=['phase_set'])
-    # print(df.shape)
+    print(df.shape)
     return df
-
-
-def widen_runtime_agg(df: pd.DataFrame, h):
-    '''
-    left separate due to separate grouping and averaging
-    '''
-    ho = df[h].unique()
-    ho.sort()
-    plot_df_iou = df.groupby(by=[h, 'phase', 'test set'], as_index=False).agg(IoU=('IoU', 'mean')) # IoU by ph, set, key
-    plot_df_runtime = df.groupby(by=[h, 'phase'], as_index=False).agg(Walltime=('Walltime', 'mean')) # time by ph, key
-    plot_df = pd.merge(left=plot_df_iou, right=plot_df_runtime, on=[h, 'phase'])
-    return plot_df, ho
-
-
-def widen_workload_agg(df: pd.DataFrame, h):
-    '''
-    left separate due to separate grouping and averaging
-    '''
-    ho = df[h].unique()
-    ho.sort()
-    plot_df_iou = df.groupby(by=[h, 'phase', 'test set'], as_index=False).agg(IoU=('IoU', 'mean')) # IoU by ph, set, key
-    plot_df_runtime = df.groupby(by=[h, 'phase'], as_index=False).agg(Workload=('Workload', 'mean')) # time by ph, key
-    plot_df = pd.merge(left=plot_df_iou, right=plot_df_runtime, on=[h, 'phase'])
-    return plot_df, ho
 
 
 def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
     '''
-    all rel plots
-    ph123 by cont
+    line/scatter
     '''
-    # print(df.head())
     return sns.relplot(
         data=df, # df.sort_values(by='phase'),
         kind=ch,
@@ -235,7 +222,7 @@ def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
 
 def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
     '''
-    all cat plots
+    box/viol/bar/point/count/boxen/strip/swarm
     '''
     return sns.catplot(
         data=df,
@@ -252,30 +239,18 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
     )
 
 
-def ucats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None): # TODO more line plts?
-    df = df[df['test set'] == 'GDA']
+def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
+    '''
+    rel: line
+    '''
     return sns.lineplot(
         data=df,
         x=x,
         y=y,
         hue=h,
         hue_order=h_ord,
-        units=h,
-        estimator=None,
-        palette=sns.color_palette(),
-    )
-    return sns.catplot(
-        data=df,
-        kind=ch,
-        x=x,
-        y=y,
-        hue=h,
-        hue_order=h_ord,
-        units=h,
-        col=c,
-        col_order=c_ord,
-        row=r,
-        row_order=r_ord,
+        # units=h,
+        # estimator=None,
         palette=sns.color_palette(),
     )
 
@@ -325,7 +300,7 @@ def ucats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_o
 #     return g
 
 
-def plot_prod(g, x, y, h, t='', bs=None, xl=''): # TODO title, labels
+def plot_prod(g, x, y, h, t='', bs=None, xl='', add_viol_labs=False): # TODO title, labels
     '''
     labels, base lines
     '''
@@ -334,9 +309,13 @@ def plot_prod(g, x, y, h, t='', bs=None, xl=''): # TODO title, labels
         for ax, b in zip(g.axes.flatten(), bs):
             ax.axhline(b, ls='--')
     if xl != '':
-        g.set_xlabels(x+' '+xl)
-        for ax in g.axes.flatten():
-            ax.set_xscale('log')
+        if isinstance(g, axes.Axes):
+            g.set_xlabel(x+' '+xl)
+            g.set_xscale('log')
+        else:
+            g.set_xlabels(x+' '+xl)
+            for ax in g.axes.flatten():
+                ax.set_xscale('log')
     if t != '':
         g.set(title=t)
     # g.set_titles(row_template="{row_name}", col_template="{col_name}")
@@ -344,17 +323,19 @@ def plot_prod(g, x, y, h, t='', bs=None, xl=''): # TODO title, labels
     # g.set(title='IoUs by amount of gda in setups')
     # g.set_titles("{col_name}")
     # g.set_axis_labels(x, y)
-    for ax in g.axes.flat: # TODO plot vals are 'fake' - extract from df, pass as param
-        violins = [c for c in ax.collections if isinstance(c, collections.PolyCollection)]
-        
-        for v in violins:
-            verts = v.get_paths()[0].vertices
-            y_vals = verts[:, 1]
-            ymin, ymax = y_vals.min(), y_vals.max()
+
+    if add_viol_labs:
+        for ax in g.axes.flat: # TODO plot vals are 'fake' - extract from df, pass as param
+            violins = [c for c in ax.collections if isinstance(c, collections.PolyCollection)]
             
-            # x-position of the violin center
-            x_center = mean(verts[:, 0])
-            
-            ax.text(x_center, ymin, f"{ymin:.3f}", ha="center", va="top")
-            ax.text(x_center, ymax, f"{ymax:.3f}", ha="center", va="bottom")
+            for v in violins:
+                verts = v.get_paths()[0].vertices
+                y_vals = verts[:, 1]
+                ymin, ymax = y_vals.min(), y_vals.max()
+                
+                # x-position of the violin center
+                x_center = mean(verts[:, 0])
+                
+                ax.text(x_center, ymin, f"{ymin:.3f}", ha="center", va="top")
+                ax.text(x_center, ymax, f"{ymax:.3f}", ha="center", va="bottom")
     return g

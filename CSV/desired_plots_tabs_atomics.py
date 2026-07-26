@@ -37,7 +37,7 @@ HPARAM_COLS_BASE = ['wd', 'epochs',  'ID', 'epochs_done', 'loss', 'val', 'lrdec'
 CALC_COLS_BASE = ['workload', 're_t', 'do_t', 're_v', 'real', 'w_v', 'w_t', 'dom', 'do_v', 'sub_mult', 'effective workload', 'dist']
 
 SNGL_COLS_BASES = CALC_COLS_BASE + HPARAM_COLS_BASE + RAW_IOU_COLS
-JOINT_COLS_BASES = SNGL_COLS_BASES + ['Walltime', 'Workload'] # the cum vals
+JOINT_COLS_BASES = SNGL_COLS_BASES + ['Walltime', 'Workload', 'SYNT use', 'DK use', 'GDA use'] # the cum vals
 
 SNGL_FIXED_COLS = ['entry_id']
 GLOB_FIXED_COLS = ['comb_key', 'trains', 'Sworkload', 'cnt_ds', 's_lvl', 'dk_lvl', 'gda_lvl', 
@@ -80,12 +80,29 @@ def process_comb_cum_calcs(df: pd.DataFrame):
     df['2_Workload'] = df['workload_y'] + df['1_Workload']
     df['3_Workload'] = df['workload'] + df['2_Workload']
 
-    # TODO analogicznie jak lvl i jak cum; tr_val zamiast comb_key
-    df['s_lvl'] = [x.count('s') for x in df['comb_key']] # how many SYNTs: s, sub, subm
-    df['s_lvl'] += [x.count('_m') for x in df['comb_key']] # plus how many MIXs: _m
-    df['dk_lvl'] = [x.count('dk') for x in df['comb_key']] # how many DKs: dk
-    df['dk_lvl'] += [x.count('m') for x in df['comb_key']] # plus how many MIXs: m
-    df['gda_lvl'] = [x.count('gda') for x in df['comb_key']] # how many GDAs
+    df['1_SYNT use'] = [x.count('s') for x in df['tr_val_x']] # how many SYNTs: s, sub, subm
+    df['1_SYNT use'] += [x.count('_m') for x in df['tr_val_x']] # plus how many MIXs: _m
+    df['1_DK use'] = [x.count('dk') for x in df['tr_val_x']] # how many DKs: dk
+    df['1_DK use'] += [x.count('m') for x in df['tr_val_x']] # plus how many MIXs: m
+    df['1_GDA use'] = [x.count('gda') for x in df['tr_val_x']] # how many GDAs
+
+    df['2_SYNT use'] = [x.count('s') for x in df['tr_val_y']] # how many SYNTs: s, sub, subm
+    df['2_SYNT use'] += [x.count('_m') for x in df['tr_val_y']] # plus how many MIXs: _m
+    df['2_SYNT use'] += df['1_SYNT use']
+    df['2_DK use'] = [x.count('dk') for x in df['tr_val_y']] # how many DKs: dk
+    df['2_DK use'] += [x.count('m') for x in df['tr_val_y']] # plus how many MIXs: m
+    df['2_DK use'] += df['1_DK use']
+    df['2_GDA use'] = [x.count('gda') for x in df['tr_val_y']] # how many GDAs
+    df['2_GDA use'] += df['1_GDA use']
+
+    df['3_SYNT use'] = [x.count('s') for x in df['tr_val']] # how many SYNTs: s, sub, subm
+    df['3_SYNT use'] += [x.count('_m') for x in df['tr_val']] # plus how many MIXs: _m
+    df['3_SYNT use'] += df['2_SYNT use']
+    df['3_DK use'] = [x.count('dk') for x in df['tr_val']] # how many DKs: dk
+    df['3_DK use'] += [x.count('m') for x in df['tr_val']] # plus how many MIXs: m
+    df['3_DK use'] += df['2_DK use']
+    df['3_GDA use'] = [x.count('gda') for x in df['tr_val']] # how many GDAs
+    df['3_GDA use'] += df['2_GDA use']
 
     df['Sworkload'] = df['3_Workload'] # sum
 
@@ -197,10 +214,11 @@ def the_major_widening(df: pd.DataFrame, stubs=SNGL_COLS_BASES):
     return df
 
 
-def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
+def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None, flip_xy=False):
     '''
     line/scatter
     '''
+    ornt = 'h' if flip_xy else 'v'
     return sns.relplot(
         data=df, # df.sort_values(by='phase'),
         kind=ch,
@@ -217,13 +235,15 @@ def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         col_order=c_ord,
         markers=True,
         # palette=sns.color_palette(), # TODO
+        orient=ornt,
     )
 
 
-def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
+def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None, flip_xy=False):
     '''
     box/viol/bar/point/count/boxen/strip/swarm
     '''
+    ornt = 'h' if flip_xy else 'v'
     return sns.catplot(
         data=df,
         kind=ch,
@@ -236,13 +256,15 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         row=r,
         row_order=r_ord,
         palette=sns.color_palette(),
+        orient=ornt,
     )
 
 
-def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
+def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None, flip_xy=False):
     '''
     rel: line
     '''
+    ornt = 'h' if flip_xy else 'v'
     return sns.lineplot(
         data=df,
         x=x,
@@ -252,6 +274,7 @@ def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         # units=h,
         # estimator=None,
         palette=sns.color_palette(),
+        orient=ornt,
     )
 
 
@@ -300,14 +323,17 @@ def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
 #     return g
 
 
-def plot_prod(g, x, y, h, t='', bs=None, xl='', add_viol_labs=False): # TODO title, labels
+def plot_prod(g, x, y, h, t='', bs=None, xl='', add_viol_labs=False, flip_xy=False): # TODO title, labels
     '''
     labels, base lines
     '''
     if bs:
         # g.set(ylim=(0.35, 0.85))
         for ax, b in zip(g.axes.flatten(), bs):
-            ax.axhline(b, ls='--')
+            if flip_xy:
+                ax.axvline(b, ls='--')
+            else:
+                ax.axhline(b, ls='--')
     if xl != '':
         if isinstance(g, axes.Axes):
             g.set_xlabel(x+' '+xl)

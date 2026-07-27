@@ -10,20 +10,17 @@ from os import makedirs
 from desired_plots_tabs_atomics import *
 
 
-DIR = 'CSV/joint_ph_charts/res_dfs3'
-SAVEDIR = 'CSV/joint_ph_charts/selected3/c'
+DIR = 'CSV/joint_ph_charts/res_dfs4'
+SAVEDIR = 'CSV/joint_ph_charts/selected3/d'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
     'ph1': f'{DIR}/proc_ph1.csv',
     'subs_16': f'{DIR}/subs_16.csv',
-    # 'ph2': f'{DIR}/proc_ph2.csv',
-    # 'ph3': f'{DIR}/proc_ph3.csv',
     'concat': f'{DIR}/cnc123b.csv',
 }
 
 
-# HS_SNGL = ['train_val', 'dom', 'real', 'dist']
 HS_SNGL = ['train_val', 'SYNT use', 'DK use', 'GDA use']
 HS_JOINT = ['total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use']
 HS_CUM = ['cumul. no. unique DS', 'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use']
@@ -35,8 +32,9 @@ CH_BBV = ['bar', 'box', 'violin']
 CH_CAT = CH_BBV + ['line']
 
 
-def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=False, swap_dir_ord=False):
+def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=False, swap_dir_ord=False, xtra=''):
     if SAVING:
+        keyy = str(keyy) + '_' + xtra
         d = f'{SAVEDIR}/{keyy}/{fu_name}'
         if swap_dir_ord:
             d = f'{SAVEDIR}/{fu_name}/{keyy}'
@@ -48,12 +46,13 @@ def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=
             df.to_csv(ppdf)
         else:
             g.savefig(ppp)
+            print(ppp)
             plt.close()
     elif not sv_df:
         plt.show()
 
 
-def rep_plts(df, x, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu, agg, xord=None):
+def rep_plts(df, x, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu, agg, xord=None, xtra=''):
     min_max_labs = agg
     for ch in chs:
         if not SAVING:
@@ -63,7 +62,7 @@ def rep_plts(df, x, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, t
         else:
             g = ch_fu(df, x, y, h, col, col_order, row, row_ord, ch=ch, h_ord=h_ord, s=s, size=s, xord=xord)
         g = plot_prod(g, x, y, h, bs=bs, t=tit, xl=xl, min_max_labs=min_max_labs)
-        save_plt_df(df, g, fu, ch, h) # g
+        save_plt_df(df, g, fu, ch, h, xtra=xtra) # g
 
 
 def repeat_plot(df: pd.DataFrame, fu: str, x='phase', y='IoU', hs=HS_JOINT, h_ord=None, 
@@ -87,6 +86,7 @@ def repeat_plot(df: pd.DataFrame, fu: str, x='phase', y='IoU', hs=HS_JOINT, h_or
         save_plt_df(agg, None, fu, '', '', True) # df
         # save_plt_df(df.groupby(by=h).agg('mean'), g, f'{fu}_agg', ch, h, True) # df TODO save wide/agg df
     for h in hs:
+        xtra = ''
         xx = x
         gr = [x, h, 'test set']
         if x == 'h':
@@ -99,6 +99,7 @@ def repeat_plot(df: pd.DataFrame, fu: str, x='phase', y='IoU', hs=HS_JOINT, h_or
             xx = h
         if xo:
             xord = df[gr].drop_duplicates().sort_values(h)[x].tolist()
+            xtra=h
         gr = list(set(gr))
         print('gr by', gr)
         agg = df.groupby(gr)[y].agg(min='min', Q1=lambda x: x.quantile(0.25), mean='mean',
@@ -106,7 +107,7 @@ def repeat_plot(df: pd.DataFrame, fu: str, x='phase', y='IoU', hs=HS_JOINT, h_or
         if not SAVING:
             print(agg.head())
         print(agg['max'].size, agg['max'].count(), x, xx, h, gr)
-        rep_plts(df, xx, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu, agg, xord)
+        rep_plts(df, xx, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu, agg, xord, xtra)
         save_plt_df(agg, None, fu, '', h, True) # df
         # save_plt_df(df.groupby(by=h).agg('mean'), g, f'{fu}_agg', ch, h, True) # df TODO save wide/agg df
 

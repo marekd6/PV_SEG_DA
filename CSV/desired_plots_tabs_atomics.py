@@ -415,7 +415,7 @@ def plot_prod(g, x, y, h, t='', bs=None, xl='', min_max_labs=pd.DataFrame()):
     # g.set_axis_labels(x, y)
 
     # if add_viol_labs:
-    mrg = 0.03
+    mrg = 0.003
     if not min_max_labs.empty:
         if not SAVING:
             print(min_max_labs.head(7))

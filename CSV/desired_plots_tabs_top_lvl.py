@@ -50,12 +50,10 @@ def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=
         plt.show()
 
 
-def rep_plts(df, x, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu, flip_xy):
+def rep_plts(df, x, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu):
     for ch in chs:
         if not SAVING:
             print(df.head(1))
-        if flip_xy:
-            x, y = y, x
         g = ch_fu(df, x, y, h, col, col_order, row, row_ord, ch=ch, h_ord=h_ord, s=s, size=s)
         g = plot_prod(g, x, y, h, bs=bs, t=tit, xl=xl, add_viol_labs=(ch == 'violin'))
         save_plt_df(df, g, fu, ch, h) # g
@@ -63,18 +61,18 @@ def rep_plts(df, x, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, t
 
 def repeat_plot(df: pd.DataFrame, fu: str, x='phase', y='IoU', hs=HS_JOINT, h_ord=None, 
                 col='test set', col_order=["DK", "GDA", "SYNT"], row='phase', row_ord=[1, 2, 3], 
-                chs=CH_BBV, ch_fu=cats, s=None, bs=None, tit='', xl='', flip_xy=False):
+                chs=CH_BBV, ch_fu=cats, s=None, bs=None, tit='', xl=''):
     '''
     plot & agg, save
     '''
     if row == None:
         row_ord = None
     if len(hs) == 0:
-        rep_plts(df, x, y, None, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu, flip_xy)
+        rep_plts(df, x, y, None, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu)
         save_plt_df(df, None, fu, '', '', True) # df
         # save_plt_df(df.groupby(by=h).agg('mean'), g, f'{fu}_agg', ch, h, True) # df TODO save wide/agg df
     for h in hs:
-        rep_plts(df, x, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu, flip_xy)
+        rep_plts(df, x, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu)
         save_plt_df(df, None, fu, '', h, True) # df
         # save_plt_df(df.groupby(by=h).agg('mean'), g, f'{fu}_agg', ch, h, True) # df TODO save wide/agg df
 
@@ -89,9 +87,9 @@ def joint_plts_auto_agg_4D(df: pd.DataFrame, fl: str='joint'): # OK - add more
 
 def joint_plts_auto_agg_5D(df: pd.DataFrame, fl: str='joint'): # prawie
     '''x=h, y=IoU, col=set, h=HS_CUM, row=phase; bar (viol, box)'''
+    print(df.dtypes)
     repeat_plot(df, f'{fl}_phase', hs=HS_CUM, bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 9
     repeat_plot(df, f'{fl}_phase', hs=HS_CUM, row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 3
-    repeat_plot(df, f'{fl}_phase', hs=HS_CUM, row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV, flip_xy=True) # 3
     repeat_plot(df, f'{fl}_phase', bs=[0.71, 0.617, 0.359], chs=CH_BBV)
     repeat_plot(df, f'{fl}_phase', hs=['phase'], bs=[0.71, 0.617, 0.359], chs=CH_BBV)
     repeat_plot(df, f'{fl}_phase', hs=[], bs=[0.71, 0.617, 0.359], chs=CH_BBV)

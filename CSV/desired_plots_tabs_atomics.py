@@ -61,8 +61,19 @@ def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=Fals
         df = round_sngl_ph(df, endecja)
     df = the_major_widening(df, st)
     df = df.fillna({'ema': False, 'sub': '100'}) # TODO map composite, mix to numerics 1/12 and cast to numerics, plot
+    df = make_categorical(df, ['phase', 'ema', 'sub', 'comb_key', 'trains', 'tr_val', 
+                               'SYNT use', 'DK use', 'GDA use', 'loss', 'val', 'fn',
+                               'cnt_ds', 's_lvl', 'dk_lvl', 'gda_lvl', 'train', 'src', 'test set'])
+
     print(df.columns)
     print(df.head())
+    return df
+
+
+def make_categorical(df: pd.DataFrame, vars=['phase']):
+    for x in vars:
+        if x in df.columns:
+            df[x] = pd.Categorical(df[x])
     return df
 
 
@@ -214,11 +225,10 @@ def the_major_widening(df: pd.DataFrame, stubs=SNGL_COLS_BASES):
     return df
 
 
-def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None, flip_xy=False):
+def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
     '''
     line/scatter
     '''
-    ornt = 'h' if flip_xy else 'v'
     return sns.relplot(
         data=df, # df.sort_values(by='phase'),
         kind=ch,
@@ -235,15 +245,13 @@ def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         col_order=c_ord,
         markers=True,
         # palette=sns.color_palette(), # TODO
-        orient=ornt,
     )
 
 
-def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None, flip_xy=False):
+def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='bar', size=None):
     '''
     box/viol/bar/point/count/boxen/strip/swarm
     '''
-    ornt = 'h' if flip_xy else 'v'
     return sns.catplot(
         data=df,
         kind=ch,
@@ -256,15 +264,13 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         row=r,
         row_order=r_ord,
         palette=sns.color_palette(),
-        orient=ornt,
     )
 
 
-def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None, flip_xy=False):
+def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
     '''
     rel: line
     '''
-    ornt = 'h' if flip_xy else 'v'
     return sns.lineplot(
         data=df,
         x=x,
@@ -274,7 +280,6 @@ def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         # units=h,
         # estimator=None,
         palette=sns.color_palette(),
-        orient=ornt,
     )
 
 
@@ -323,17 +328,14 @@ def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
 #     return g
 
 
-def plot_prod(g, x, y, h, t='', bs=None, xl='', add_viol_labs=False, flip_xy=False): # TODO title, labels
+def plot_prod(g, x, y, h, t='', bs=None, xl='', add_viol_labs=False): # TODO title, labels
     '''
     labels, base lines
     '''
     if bs:
         # g.set(ylim=(0.35, 0.85))
         for ax, b in zip(g.axes.flatten(), bs):
-            if flip_xy:
-                ax.axvline(b, ls='--')
-            else:
-                ax.axhline(b, ls='--')
+            ax.axhline(b, ls='--')
     if xl != '':
         if isinstance(g, axes.Axes):
             g.set_xlabel(x+' '+xl)

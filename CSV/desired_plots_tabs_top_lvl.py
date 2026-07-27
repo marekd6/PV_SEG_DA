@@ -11,26 +11,27 @@ from desired_plots_tabs_atomics import *
 
 
 DIR = 'CSV/joint_ph_charts/res_dfs3'
-SAVEDIR = 'CSV/joint_ph_charts/selected3/a'
+SAVEDIR = 'CSV/joint_ph_charts/selected3/c'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
     'ph1': f'{DIR}/proc_ph1.csv',
     'subs_16': f'{DIR}/subs_16.csv',
-    'ph2': f'{DIR}/proc_ph2.csv',
-    'ph3': f'{DIR}/proc_ph3.csv',
+    # 'ph2': f'{DIR}/proc_ph2.csv',
+    # 'ph3': f'{DIR}/proc_ph3.csv',
     'concat': f'{DIR}/cnc123b.csv',
 }
 
 
-HS_SNGL = ['tr_val', 'dom', 'real', 'dist']
-HS_SNGL = ['tr_val']
+# HS_SNGL = ['train_val', 'dom', 'real', 'dist']
+HS_SNGL = ['train_val', 'SYNT use', 'DK use', 'GDA use']
 HS_JOINT = ['total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use']
 HS_CUM = ['cumul. no. unique DS', 'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use']
 HS_ALL = HS_SNGL + HS_CUM + HS_JOINT
 
 CH_BBV = ['bar', 'box', 'violin']
-CH_BBV = ['bar']
+# CH_BBV = ['bar']
+# CH_BBV = ['violin']
 CH_CAT = CH_BBV + ['line']
 
 
@@ -52,15 +53,16 @@ def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=
         plt.show()
 
 
-def rep_plts(df, x, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu):
+def rep_plts(df, x, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu, agg, xord=None):
+    min_max_labs = agg
     for ch in chs:
         if not SAVING:
             print(df.head(1))
         if ch == 'line2':
             g = line(df, x, y, h, col, col_order, row, row_ord, ch=ch, h_ord=h_ord, s=s, size=s)
         else:
-            g = ch_fu(df, x, y, h, col, col_order, row, row_ord, ch=ch, h_ord=h_ord, s=s, size=s)
-        g = plot_prod(g, x, y, h, bs=bs, t=tit, xl=xl, add_viol_labs=(ch == 'violin'))
+            g = ch_fu(df, x, y, h, col, col_order, row, row_ord, ch=ch, h_ord=h_ord, s=s, size=s, xord=xord)
+        g = plot_prod(g, x, y, h, bs=bs, t=tit, xl=xl, min_max_labs=min_max_labs)
         save_plt_df(df, g, fu, ch, h) # g
 
 
@@ -70,23 +72,50 @@ def repeat_plot(df: pd.DataFrame, fu: str, x='phase', y='IoU', hs=HS_JOINT, h_or
     '''
     plot & agg, save
     '''
+    xo = False
+    xord = None
     if row == None:
         row_ord = None
     if len(hs) == 0:
-        rep_plts(df, x, y, None, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu)
-        save_plt_df(df, None, fu, '', '', True) # df
+        gr = [x, 'test set']
+        print('gr by', gr)
+        agg = df.groupby(gr)[y].agg(min='min', Q1=lambda x: x.quantile(0.25), mean='mean',
+                                    Q3=lambda x: x.quantile(0.75), max='max').reset_index()
+        if not SAVING:
+            print(agg.head())
+        rep_plts(df, x, y, None, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu, agg)
+        save_plt_df(agg, None, fu, '', '', True) # df
         # save_plt_df(df.groupby(by=h).agg('mean'), g, f'{fu}_agg', ch, h, True) # df TODO save wide/agg df
     for h in hs:
-        rep_plts(df, x, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu)
-        save_plt_df(df, None, fu, '', h, True) # df
+        xx = x
+        gr = [x, h, 'test set']
+        if x == 'h':
+            gr.remove(x)
+            x = h
+            xx = h
+            xo = True
+        elif x == 'hh':
+            gr.remove(x)
+            xx = h
+        if xo:
+            xord = df[gr].drop_duplicates().sort_values(h)[x].tolist()
+        gr = list(set(gr))
+        print('gr by', gr)
+        agg = df.groupby(gr)[y].agg(min='min', Q1=lambda x: x.quantile(0.25), mean='mean',
+                                    Q3=lambda x: x.quantile(0.75), max='max').reset_index()
+        if not SAVING:
+            print(agg.head())
+        print(agg['max'].size, agg['max'].count(), x, xx, h, gr)
+        rep_plts(df, xx, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu, agg, xord)
+        save_plt_df(agg, None, fu, '', h, True) # df
         # save_plt_df(df.groupby(by=h).agg('mean'), g, f'{fu}_agg', ch, h, True) # df TODO save wide/agg df
 
 
 def joint_plts_auto_agg_4D(df: pd.DataFrame, fl: str='joint'): # OK - add more
     '''x=phase, y=IoU, col=set, h=HS_JOINT; bar (viol, box, pt-line - może ten lineplot, nie catplot)'''
-    # repeat_plot(df, f'{fl}_phase', row=None, row_ord=None, bs=[0.71, 0.617, 0.359], ch_fu=ucats, chs=['line'])
+    # repeat_plot(df, f'{fl}_phase', row=None, row_ord=None, bs=[0.71, 0.617, 0.359], ch_fu=ucats, chs=['line']) # TODO ucats???
 
-    # repeat_plot(df, f'{fl}_phase', hs=HS_ALL, row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV)
+    # repeat_plot(df, f'{fl}_phase', hs=HS_ALL, row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV) # -----------------------------------------
     repeat_plot(df, f'{fl}_phase', hs=HS_CUM, row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV)
     repeat_plot(df, f'{fl}_phase', hs=['phase'], row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV)
     repeat_plot(df, f'{fl}_phase', hs=[], row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV)
@@ -95,13 +124,13 @@ def joint_plts_auto_agg_4D(df: pd.DataFrame, fl: str='joint'): # OK - add more
 def joint_plts_auto_agg_5D(df: pd.DataFrame, fl: str='joint'): # OK
     '''x=h, y=IoU, col=set, h=HS_CUM, row=phase; bar (viol, box)'''
     print(df.dtypes)
-    repeat_plot(df, f'{fl}_phase', hs=HS_CUM, bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 9
-    repeat_plot(df, f'{fl}_phase', hs=HS_CUM, row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 3
+    repeat_plot(df, f'{fl}_phase9', hs=HS_CUM, bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 9
+    repeat_plot(df, f'{fl}_phase3', hs=HS_CUM, row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 3
     # repeat_plot(df, f'{fl}_phase', bs=[0.71, 0.617, 0.359], chs=CH_BBV) # not cum
-    repeat_plot(df, f'{fl}_phase', hs=['phase'], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 9
-    repeat_plot(df, f'{fl}_phase', hs=['phase'], row=None,bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 3
-    repeat_plot(df, f'{fl}_phase', hs=[], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 9
-    repeat_plot(df, f'{fl}_phase', hs=[], row=None,bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 3
+    repeat_plot(df, f'{fl}_phase9', hs=['phase'], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 9
+    repeat_plot(df, f'{fl}_phase3', hs=['phase'], row=None,bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 3
+    repeat_plot(df, f'{fl}_phase9', hs=[], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 9
+    repeat_plot(df, f'{fl}_phase3', hs=[], row=None,bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 3
 
 
 def joint_plts_manual_agg_4D(df: pd.DataFrame, fl: str='joint'): # OK
@@ -121,14 +150,14 @@ def joint_plts_manual_agg_4D(df: pd.DataFrame, fl: str='joint'): # OK
 
 def joint_plts_no_agg_4D(df: pd.DataFrame, fl: str='joint'): # OK
     '''x=Workload/Walltime, y=IoU, col=set, h=HS_JOINT; scatter'''
-    repeat_plot(df, f'{fl}_Walltime', 'Walltime', hs=HS_ALL, row=None, chs=['scatter'], ch_fu=rels, xl='[s]')
-    repeat_plot(df, f'{fl}_Workload', 'Workload', hs=HS_ALL, row=None, chs=['scatter'], ch_fu=rels)
+    repeat_plot(df, f'{fl}_Walltime3', 'Walltime', hs=HS_JOINT+HS_CUM, row=None, chs=['scatter'], ch_fu=rels, xl='[s]') # HS_ALL not
+    repeat_plot(df, f'{fl}_Workload3', 'Workload', hs=HS_JOINT+HS_CUM, row=None, chs=['scatter'], ch_fu=rels) # HS_ALL not
 
 
 def joint_plts_no_agg_5D(df: pd.DataFrame, fl: str='joint'): # OK
     '''x=Workload/Walltime, y=IoU, col=set, h=HS_SNGL, row=phase; scatter'''
-    repeat_plot(df, f'{fl}_Walltime', 'Walltime', hs=HS_ALL, chs=['scatter'], ch_fu=rels, xl='[s]')
-    repeat_plot(df, f'{fl}_Workload', 'Workload', hs=HS_ALL, chs=['scatter'], ch_fu=rels)
+    repeat_plot(df, f'{fl}_Walltime9', 'Walltime', hs=HS_JOINT+HS_CUM, chs=['scatter'], ch_fu=rels, xl='[s]') # HS_ALL not
+    repeat_plot(df, f'{fl}_Workload9', 'Workload', hs=HS_JOINT+HS_CUM, chs=['scatter'], ch_fu=rels) # HS_ALL not
 
 
 # def concats_5D(df: pd.DataFrame, fl: str):
@@ -150,36 +179,43 @@ def joint_plts_no_agg_5D(df: pd.DataFrame, fl: str='joint'): # OK
 #         repeat_plot(df, f'{fl}_sub', 'sub', hs=['sub'], row='phase', chs=CH_BBV, ch_fu=cats_endlabs, widen_fu=widen_phases_h3) # only ph1
 
 
-def ph1_plts_auto_agg_5D(df: pd.DataFrame, fl: str='ph1'): # OK, ale bez sensu
-    # x=h, y=IoU, col=set, h=HS_JOINT, row=phase; bar (viol, box)
-    repeat_plot(df, f'{fl}_phase', hs=HS_SNGL, row='phase', bs=[0.71, 0.617, 0.359], chs=CH_BBV)
-    repeat_plot(df, f'{fl}_phase', hs=['phase'], row='phase', bs=[0.71, 0.617, 0.359], chs=CH_BBV)
-    repeat_plot(df, f'{fl}_phase', hs=[], row='phase', bs=[0.71, 0.617, 0.359], chs=CH_BBV)
+def ph1_plts_auto_agg_5D(df: pd.DataFrame, fl: str='ph1'): # OK
+    '''x=h, y=IoU, col=set, h=HS_JOINT, row=phase; bar (viol, box)'''
+    repeat_plot(df, f'{fl}_phase', x='h', hs=HS_SNGL, row_ord=[1], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # x by h, xord by h
+    repeat_plot(df, f'{fl}_phase', x='hh', hs=HS_SNGL, row_ord=[1], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # self-self x-h
+    repeat_plot(df, f'{fl}_phase', hs=HS_SNGL, row_ord=[1], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # redundant but OK
+    repeat_plot(df, f'{fl}_phase', row=None, hs=['phase'], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # no h
+    repeat_plot(df, f'{fl}_phase', row=None, hs=[], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # no h
+
+
+def concats_5D(df: pd.DataFrame, fl: str): # next
+    '''x=h, y=IoU, col=set, h=HS_JOINT, row=phase; bar (viol, box)'''
+    repeat_plot(df, f'{fl}_phase', row=None, hs=['phase'], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 3
+    repeat_plot(df, f'{fl}_phase', hs=[], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 9
 
 
 def all_joint123():
     ph123 = total_df_treatment(FILES['joint'], joint=True)
-    # joint_plts_auto_agg_4D(ph123)
-    # joint_plts_manual_agg_4D(ph123)
+    joint_plts_auto_agg_4D(ph123)
+    joint_plts_manual_agg_4D(ph123)
     joint_plts_auto_agg_5D(ph123)
     joint_plts_no_agg_4D(ph123)
     joint_plts_no_agg_5D(ph123)
-    # joint_plts_no_agg_5D(ph123)
 
 
 def all_concat(): # TODO treatment nie działa
     cnc = total_df_treatment(FILES['concat'], cnc=True)
 
 
-def all_1st_phase(): # TODO treatment nie działa?
-    ph1 = total_df_treatment(FILES['ph1'])
+def all_1st_phase():
+    ph1 = total_df_treatment(FILES['ph1'], sngl_ph_nr=1)
     ph1_plts_auto_agg_5D(ph1)
 
 
 def main():
     all_joint123()
     # all_concat()
-    # all_1st_phase()
+    all_1st_phase()
 
 
 if __name__ == '__main__':

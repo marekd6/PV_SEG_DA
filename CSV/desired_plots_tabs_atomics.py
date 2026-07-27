@@ -14,7 +14,7 @@ from numpy import mean
 
 
 SAVING = True
-SAVING = False
+# SAVING = False
 
 LMT = False
 
@@ -33,7 +33,7 @@ RAW_IOU_COLS = ['test_SYNT_iou', 'test_GDA_iou', 'test_DK_iou']
 
 HPARAM_COLS_BASE = ['wd', 'epochs',  'ID', 'epochs_done', 'loss', 'val', 'lrdec', 'ema', 'epoch', 
                     'src', 'batch_size', 'Sweep', 'warmup_epochs', 'train', 'sub',  
-                    'tr_val', 'Runtime', 'fn', 'lrenc']
+                    'train_val', 'Runtime', 'fn', 'lrenc']
 CALC_COLS_BASE = ['workload', 're_t', 'do_t', 're_v', 'real', 'w_v', 'w_t', 'dom', 'do_v', 'sub_mult', 'effective workload', 'dist']
 
 SNGL_COLS_BASES = CALC_COLS_BASE + HPARAM_COLS_BASE + RAW_IOU_COLS
@@ -45,23 +45,26 @@ GLOB_FIXED_COLS = ['comb_key', 'trains', 'Sworkload', 'total no. unique DS', 'to
              'Sdom', 'Sreal', 'DS_score_raw', 'DS_score', 'ddiff'] + SNGL_FIXED_COLS
 
 
-def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=False, off=not LMT, endecja=0):
+def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=False, off=not LMT, endecja=0, sngl_ph_nr=None):
     '''
-    many operations, mainly df widening
+    many operations, mainly col aggregations and df widening
     '''
     df = pd.read_csv(pth)
-    df = df.rename(columns={'Unnamed: 0': 'entry_id'})
+    df = df.rename(columns={'Unnamed: 0': 'entry_id', 'tr_val': 'train_val'})
     st = SNGL_COLS_BASES
     if limit:
         df = limit_to_successful(df, cnc, off)
     if joint:
         df = process_comb_cum_calcs(df)
         st = JOINT_COLS_BASES
+    if not joint and not cnc:
+        df = process_sngl_calcs(df)
+        st = SNGL_COLS_BASES + ['SYNT use', 'DK use', 'GDA use']
     if round:
         df = round_sngl_ph(df, endecja)
-    df = the_major_widening(df, st)
+    df = the_major_widening(df, st, sngl_ph_nr)
     df = df.fillna({'ema': False, 'sub': '100'}) # TODO map composite, mix to numerics 1/12 and cast to numerics, plot
-    df = make_categorical(df, ['phase', 'ema', 'sub', 'comb_key', 'trains', 'tr_val', 'cumul. no. unique DS',
+    df = make_categorical(df, ['phase', 'ema', 'sub', 'comb_key', 'trains', 'train_val', 'cumul. no. unique DS',
                                'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use', 'loss', 'val', 'fn',
                                'total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use', 'train', 'src', 'test set'])
 
@@ -71,10 +74,25 @@ def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=Fals
 
 
 def make_categorical(df: pd.DataFrame, vars=['phase']):
+    '''
+    pandas Categorical type for cols
+    '''
     for x in vars:
         if x in df.columns:
             # dt = int if x in ['phase', 'SYNT use', 'DK use', 'GDA use', 'cnt_ds', 's_lvl', 'dk_lvl', 'gda_lvl',] else pd.CategoricalDtype()
             df[x] = pd.Categorical(df[x])
+    return df
+
+
+def process_sngl_calcs(df: pd.DataFrame):
+    '''
+    sngl phase (local) aggregations
+    '''
+    df['SYNT use'] = [x.count('s') for x in df['train_val']] # how many SYNTs: s, sub, subm
+    df['SYNT use'] += [x.count('_m') for x in df['train_val']] # plus how many MIXs: _m
+    df['DK use'] = [x.count('dk') for x in df['train_val']] # how many DKs: dk
+    df['DK use'] += [x.count('m') for x in df['train_val']] # plus how many MIXs: m
+    df['GDA use'] = [x.count('gda') for x in df['train_val']] # how many GDAs
     return df
 
 
@@ -107,13 +125,13 @@ def process_comb_cum_calcs(df: pd.DataFrame):
     df['2_cumul. GDA use'] = [x.count('gda') for x in df['tr_val_y']] # how many GDAs
     df['2_cumul. GDA use'] += df['1_cumul. GDA use']
 
-    df['3_cumul. SYNT use'] = [x.count('s') for x in df['tr_val']] # how many SYNTs: s, sub, subm
-    df['3_cumul. SYNT use'] += [x.count('_m') for x in df['tr_val']] # plus how many MIXs: _m
+    df['3_cumul. SYNT use'] = [x.count('s') for x in df['train_val']] # how many SYNTs: s, sub, subm
+    df['3_cumul. SYNT use'] += [x.count('_m') for x in df['train_val']] # plus how many MIXs: _m
     df['3_cumul. SYNT use'] += df['2_cumul. SYNT use']
-    df['3_cumul. DK use'] = [x.count('dk') for x in df['tr_val']] # how many DKs: dk
-    df['3_cumul. DK use'] += [x.count('m') for x in df['tr_val']] # plus how many MIXs: m
+    df['3_cumul. DK use'] = [x.count('dk') for x in df['train_val']] # how many DKs: dk
+    df['3_cumul. DK use'] += [x.count('m') for x in df['train_val']] # plus how many MIXs: m
     df['3_cumul. DK use'] += df['2_cumul. DK use']
-    df['3_cumul. GDA use'] = [x.count('gda') for x in df['tr_val']] # how many GDAs
+    df['3_cumul. GDA use'] = [x.count('gda') for x in df['train_val']] # how many GDAs
     df['3_cumul. GDA use'] += df['2_cumul. GDA use']
 
     df['Sworkload'] = df['3_Workload'] # sum
@@ -121,7 +139,7 @@ def process_comb_cum_calcs(df: pd.DataFrame):
     df['total no. unique DS'] = df['comb_key'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) # number of DSs
     df['1_cumul. no. unique DS'] = df['tr_val_x'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst))))
     df['2_cumul. no. unique DS'] = df['tr_val_y'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) + df['1_cumul. no. unique DS']
-    df['3_cumul. no. unique DS'] = df['tr_val'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) + df['2_cumul. no. unique DS']
+    df['3_cumul. no. unique DS'] = df['train_val'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) + df['2_cumul. no. unique DS']
 
     df['total SYNT use'] = [x.count('s') for x in df['comb_key']] # how many SYNTs: s, sub, subm
     df['total SYNT use'] += [x.count('_m') for x in df['comb_key']] # plus how many MIXs: _m
@@ -165,15 +183,17 @@ def limit_to_successful(df: pd.DataFrame, cnc=False, off=not LMT):
     if off or cnc:
         return df
     iou = list(set(df.columns) & set(sorted(IOU_COLS_GDA)))
-    print(sorted(iou))
+    if not SAVING:
+        print(sorted(iou))
     iou = sorted(iou)[0]
     return df[df[iou] > 0.617]
 
 
-def the_major_widening(df: pd.DataFrame, stubs=SNGL_COLS_BASES):
+def the_major_widening(df: pd.DataFrame, stubs=SNGL_COLS_BASES, sngl_ph_nr=None):
     '''
     unify naming convention of cols, widen params, widen IoUs
     '''
+    print('entered the_major_widening')
     rename_map = {}
     for col in df.columns:
         # untouched columns
@@ -197,7 +217,7 @@ def the_major_widening(df: pd.DataFrame, stubs=SNGL_COLS_BASES):
         else:
             # blank suffix → 3
             base = col
-            num = 3
+            num = sngl_ph_nr
 
         # prefix-based: 1_, 2_, 3_
         m = re.match(r'([1-3])_(.+)', col)
@@ -209,8 +229,9 @@ def the_major_widening(df: pd.DataFrame, stubs=SNGL_COLS_BASES):
 
     df = df.rename(columns=rename_map)
     # pd.set_option('display.max_columns', None)
-    # print(df.head(1).T.to_string())
-    # print(stubs)
+    if not SAVING:
+        print(df.head(1).T.to_string())
+        print(stubs)
 
     df = pd.wide_to_long(
         df,
@@ -219,20 +240,25 @@ def the_major_widening(df: pd.DataFrame, stubs=SNGL_COLS_BASES):
         j='phase',
         sep='_'
     ).reset_index() # test_SYNT_iou; 2
-    # print(df.head(1).T.to_string())
+    if not SAVING:
+        print(df.head(1).T.to_string())
+    print('done wide_to_long')
 
     hs = list(set(df.columns) - set(RAW_IOU_COLS))
     df = pd.melt(df, id_vars=hs, value_vars=RAW_IOU_COLS, var_name='phase_set', value_name='IoU')
     df['test set'] = df['phase_set'].str.split('_', n=2, expand=True)[1]
     df = df.drop(columns=['phase_set'])
     print(df.shape)
+    print('done IoU sets and whole the_major_widening')
     return df
 
 
-def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
+def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None, xord=None):
     '''
     line/scatter
     '''
+    if not SAVING:
+        print('rels:',x, y, h, c,r,s,ch,size)
     return sns.relplot(
         data=df, # df.sort_values(by='phase'),
         kind=ch,
@@ -252,10 +278,27 @@ def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
     )
 
 
-def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='bar', size=None):
+def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='bar', size=None, xord=None):
     '''
     box/viol/bar/point/count/boxen/strip/swarm
     '''
+    if ch == 'violin':
+        return sns.catplot(
+            data=df,
+            kind=ch,
+            x=x,
+            y=y,
+            hue=h,
+            hue_order=h_ord,
+            col=c,
+            col_order=c_ord,
+            row=r,
+            row_order=r_ord,
+            palette=sns.color_palette(),
+            cut=0,
+            density_norm='count',
+            order=xord,
+        )
     return sns.catplot(
         data=df,
         kind=ch,
@@ -268,8 +311,8 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         row=r,
         row_order=r_ord,
         palette=sns.color_palette(),
+        order=xord,
     )
-
 
 def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
     '''
@@ -345,10 +388,12 @@ def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
 #     return g
 
 
-def plot_prod(g, x, y, h, t='', bs=None, xl='', add_viol_labs=False): # TODO title, labels
+def plot_prod(g, x, y, h, t='', bs=None, xl='', min_max_labs=pd.DataFrame()):
     '''
     labels, base lines
     '''
+    if not SAVING:
+        print('plot prod', x, y, h, t, xl)
     if bs:
         # g.set(ylim=(0.35, 0.85))
         for ax, b in zip(g.axes.flatten(), bs):
@@ -369,18 +414,46 @@ def plot_prod(g, x, y, h, t='', bs=None, xl='', add_viol_labs=False): # TODO tit
     # g.set_titles("{col_name}")
     # g.set_axis_labels(x, y)
 
-    if add_viol_labs:
-        for ax in g.axes.flat: # TODO plot vals are 'fake' - extract from df, pass as param
+    # if add_viol_labs:
+    mrg = 0.03
+    if not min_max_labs.empty:
+        if not SAVING:
+            print(min_max_labs.head(7))
+        for ax in g.axes.flat: # correct viol data via cut=0
             violins = [c for c in ax.collections if isinstance(c, collections.PolyCollection)]
-            
             for v in violins:
-                verts = v.get_paths()[0].vertices
-                y_vals = verts[:, 1]
-                ymin, ymax = y_vals.min(), y_vals.max()
+                if len(v.get_paths()) > 0:
+                    verts = v.get_paths()[0].vertices
+                    y_vals = verts[:, 1]
+                    ymin, ymax = y_vals.min(), y_vals.max()
+                    x_center = mean(verts[:, 0])    
+                    ax.text(x_center, ymin-mrg, f"{ymin:.3f}", ha="center", va="top")
+                    ax.text(x_center, ymax+mrg, f"{ymax:.3f}", ha="center", va="bottom")
+        # for ax in g.axes.flat:
+        #     facet_name = ax.get_title().split('|') # ['phase = 1 ', ' test set = DK']
+        #     print(facet_name)
+        #     if len(facet_name) > 1:
+        #         ph = facet_name[0].strip().split(' = ')[1]
+        #         tst = facet_name[1].strip().split(' = ')[1]
+        #         print(ph, tst)
+        #         row = min_max_labs[min_max_labs['test set'] == tst]
+        #         print(row)
+        #         row = row[row[x] == int(ph)]
+        #         print(row)
+        #     else:
+        #         tst = facet_name[0].strip().split(' =')[1]
+        #     # row = min_max_labs[min_max_labs['test set'] == facet_name].iloc[0]
+        #     violins = [c for c in ax.collections if isinstance(c, collections.PolyCollection)]
+        #     for i, v in enumerate(violins):
+        #         verts = v.get_paths()[0].vertices
+        #         ymin = row['min'].iloc[i]
+        #         ymax = row['max'].iloc[i]
+        #         print(ymin, ymax)
                 
-                # x-position of the violin center
-                x_center = mean(verts[:, 0])
+        #         # x-position of the violin center
+        #         x_center = mean(verts[:, 0])
                 
-                ax.text(x_center, ymin, f"{ymin:.3f}", ha="center", va="top")
-                ax.text(x_center, ymax, f"{ymax:.3f}", ha="center", va="bottom")
+        #         ax.text(x_center, ymin, f"{ymin:.3f}", ha="center", va="top")
+        #         ax.text(x_center, ymax, f"{ymax:.3f}", ha="center", va="bottom")
+                # axes.Axes().text()
     return g

@@ -37,10 +37,10 @@ HPARAM_COLS_BASE = ['wd', 'epochs',  'ID', 'epochs_done', 'loss', 'val', 'lrdec'
 CALC_COLS_BASE = ['workload', 're_t', 'do_t', 're_v', 'real', 'w_v', 'w_t', 'dom', 'do_v', 'sub_mult', 'effective workload', 'dist']
 
 SNGL_COLS_BASES = CALC_COLS_BASE + HPARAM_COLS_BASE + RAW_IOU_COLS
-JOINT_COLS_BASES = SNGL_COLS_BASES + ['Walltime', 'Workload', 'SYNT use', 'DK use', 'GDA use'] # the cum vals
+JOINT_COLS_BASES = SNGL_COLS_BASES + ['Walltime', 'Workload', 'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use', 'cumul. no. unique DS'] # the cums
 
 SNGL_FIXED_COLS = ['entry_id']
-GLOB_FIXED_COLS = ['comb_key', 'trains', 'Sworkload', 'cnt_ds', 's_lvl', 'dk_lvl', 'gda_lvl', 
+GLOB_FIXED_COLS = ['comb_key', 'trains', 'Sworkload', 'total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use', 
              'DS_scores_sum', 'Sdom_raw', 'Sreal_raw', 'DS_score_tot_raw', 'DS_score_tot',
              'Sdom', 'Sreal', 'DS_score_raw', 'DS_score', 'ddiff'] + SNGL_FIXED_COLS
 
@@ -61,9 +61,9 @@ def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=Fals
         df = round_sngl_ph(df, endecja)
     df = the_major_widening(df, st)
     df = df.fillna({'ema': False, 'sub': '100'}) # TODO map composite, mix to numerics 1/12 and cast to numerics, plot
-    df = make_categorical(df, ['phase', 'ema', 'sub', 'comb_key', 'trains', 'tr_val', 
-                               'SYNT use', 'DK use', 'GDA use', 'loss', 'val', 'fn',
-                               'cnt_ds', 's_lvl', 'dk_lvl', 'gda_lvl', 'train', 'src', 'test set'])
+    df = make_categorical(df, ['phase', 'ema', 'sub', 'comb_key', 'trains', 'tr_val', 'cumul. no. unique DS',
+                               'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use', 'loss', 'val', 'fn',
+                               'total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use', 'train', 'src', 'test set'])
 
     print(df.columns)
     print(df.head())
@@ -73,6 +73,7 @@ def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=Fals
 def make_categorical(df: pd.DataFrame, vars=['phase']):
     for x in vars:
         if x in df.columns:
+            # dt = int if x in ['phase', 'SYNT use', 'DK use', 'GDA use', 'cnt_ds', 's_lvl', 'dk_lvl', 'gda_lvl',] else pd.CategoricalDtype()
             df[x] = pd.Categorical(df[x])
     return df
 
@@ -91,41 +92,44 @@ def process_comb_cum_calcs(df: pd.DataFrame):
     df['2_Workload'] = df['workload_y'] + df['1_Workload']
     df['3_Workload'] = df['workload'] + df['2_Workload']
 
-    df['1_SYNT use'] = [x.count('s') for x in df['tr_val_x']] # how many SYNTs: s, sub, subm
-    df['1_SYNT use'] += [x.count('_m') for x in df['tr_val_x']] # plus how many MIXs: _m
-    df['1_DK use'] = [x.count('dk') for x in df['tr_val_x']] # how many DKs: dk
-    df['1_DK use'] += [x.count('m') for x in df['tr_val_x']] # plus how many MIXs: m
-    df['1_GDA use'] = [x.count('gda') for x in df['tr_val_x']] # how many GDAs
+    df['1_cumul. SYNT use'] = [x.count('s') for x in df['tr_val_x']] # how many SYNTs: s, sub, subm
+    df['1_cumul. SYNT use'] += [x.count('_m') for x in df['tr_val_x']] # plus how many MIXs: _m
+    df['1_cumul. DK use'] = [x.count('dk') for x in df['tr_val_x']] # how many DKs: dk
+    df['1_cumul. DK use'] += [x.count('m') for x in df['tr_val_x']] # plus how many MIXs: m
+    df['1_cumul. GDA use'] = [x.count('gda') for x in df['tr_val_x']] # how many GDAs
 
-    df['2_SYNT use'] = [x.count('s') for x in df['tr_val_y']] # how many SYNTs: s, sub, subm
-    df['2_SYNT use'] += [x.count('_m') for x in df['tr_val_y']] # plus how many MIXs: _m
-    df['2_SYNT use'] += df['1_SYNT use']
-    df['2_DK use'] = [x.count('dk') for x in df['tr_val_y']] # how many DKs: dk
-    df['2_DK use'] += [x.count('m') for x in df['tr_val_y']] # plus how many MIXs: m
-    df['2_DK use'] += df['1_DK use']
-    df['2_GDA use'] = [x.count('gda') for x in df['tr_val_y']] # how many GDAs
-    df['2_GDA use'] += df['1_GDA use']
+    df['2_cumul. SYNT use'] = [x.count('s') for x in df['tr_val_y']] # how many SYNTs: s, sub, subm
+    df['2_cumul. SYNT use'] += [x.count('_m') for x in df['tr_val_y']] # plus how many MIXs: _m
+    df['2_cumul. SYNT use'] += df['1_cumul. SYNT use']
+    df['2_cumul. DK use'] = [x.count('dk') for x in df['tr_val_y']] # how many DKs: dk
+    df['2_cumul. DK use'] += [x.count('m') for x in df['tr_val_y']] # plus how many MIXs: m
+    df['2_cumul. DK use'] += df['1_cumul. DK use']
+    df['2_cumul. GDA use'] = [x.count('gda') for x in df['tr_val_y']] # how many GDAs
+    df['2_cumul. GDA use'] += df['1_cumul. GDA use']
 
-    df['3_SYNT use'] = [x.count('s') for x in df['tr_val']] # how many SYNTs: s, sub, subm
-    df['3_SYNT use'] += [x.count('_m') for x in df['tr_val']] # plus how many MIXs: _m
-    df['3_SYNT use'] += df['2_SYNT use']
-    df['3_DK use'] = [x.count('dk') for x in df['tr_val']] # how many DKs: dk
-    df['3_DK use'] += [x.count('m') for x in df['tr_val']] # plus how many MIXs: m
-    df['3_DK use'] += df['2_DK use']
-    df['3_GDA use'] = [x.count('gda') for x in df['tr_val']] # how many GDAs
-    df['3_GDA use'] += df['2_GDA use']
+    df['3_cumul. SYNT use'] = [x.count('s') for x in df['tr_val']] # how many SYNTs: s, sub, subm
+    df['3_cumul. SYNT use'] += [x.count('_m') for x in df['tr_val']] # plus how many MIXs: _m
+    df['3_cumul. SYNT use'] += df['2_cumul. SYNT use']
+    df['3_cumul. DK use'] = [x.count('dk') for x in df['tr_val']] # how many DKs: dk
+    df['3_cumul. DK use'] += [x.count('m') for x in df['tr_val']] # plus how many MIXs: m
+    df['3_cumul. DK use'] += df['2_cumul. DK use']
+    df['3_cumul. GDA use'] = [x.count('gda') for x in df['tr_val']] # how many GDAs
+    df['3_cumul. GDA use'] += df['2_cumul. GDA use']
 
     df['Sworkload'] = df['3_Workload'] # sum
 
-    df['cnt_ds'] = df['comb_key'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) # number of DSs
+    df['total no. unique DS'] = df['comb_key'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) # number of DSs
+    df['1_cumul. no. unique DS'] = df['tr_val_x'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst))))
+    df['2_cumul. no. unique DS'] = df['tr_val_y'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) + df['1_cumul. no. unique DS']
+    df['3_cumul. no. unique DS'] = df['tr_val'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) + df['2_cumul. no. unique DS']
 
-    df['s_lvl'] = [x.count('s') for x in df['comb_key']] # how many SYNTs: s, sub, subm
-    df['s_lvl'] += [x.count('_m') for x in df['comb_key']] # plus how many MIXs: _m
-    df['dk_lvl'] = [x.count('dk') for x in df['comb_key']] # how many DKs: dk
-    df['dk_lvl'] += [x.count('m') for x in df['comb_key']] # plus how many MIXs: m
-    df['gda_lvl'] = [x.count('gda') for x in df['comb_key']] # how many GDAs
-    # df['s_lvl'] = [x.count('s') for x in df['trains']] # how many SYNTs in train only
-    # df['gda_lvl'] = [x.count('gda') for x in df['trains']] # how many GDAs in train only
+    df['total SYNT use'] = [x.count('s') for x in df['comb_key']] # how many SYNTs: s, sub, subm
+    df['total SYNT use'] += [x.count('_m') for x in df['comb_key']] # plus how many MIXs: _m
+    df['total DK use'] = [x.count('dk') for x in df['comb_key']] # how many DKs: dk
+    df['total DK use'] += [x.count('m') for x in df['comb_key']] # plus how many MIXs: m
+    df['total GDA use'] = [x.count('gda') for x in df['comb_key']] # how many GDAs
+    # df['total SYNT use'] = [x.count('s') for x in df['trains']] # how many SYNTs in train only
+    # df['total GDA use'] = [x.count('gda') for x in df['trains']] # how many GDAs in train only
 
     df['DS_scores_sum'] = df['dist_x'] + df['dist_y'] + df['dist'] # sum of 1, 2, 3 scores
     # df['DS_scores_sum'] = df['DS_scores_sum'] / 3
@@ -271,16 +275,29 @@ def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
     '''
     rel: line
     '''
-    return sns.lineplot(
+    g = sns.FacetGrid(
         data=df,
-        x=x,
-        y=y,
+        row=r,
+        row_order=r_ord,
+        col=c,
+        col_order=c_ord,
         hue=h,
-        hue_order=h_ord,
-        # units=h,
-        # estimator=None,
-        palette=sns.color_palette(),
     )
+    g.map_dataframe(sns.lineplot, x=x, y=y)
+    if h:
+        g.add_legend()
+    g.set_axis_labels(x, y)
+    return g
+    # return sns.lineplot(
+    #     data=df,
+    #     x=x,
+    #     y=y,
+    #     hue=h,
+    #     hue_order=h_ord,
+    #     # units=h,
+    #     # estimator=None,
+    #     palette=sns.color_palette(),
+    # )
 
 
 # def lineplt_ci(df: pd.DataFrame, x, y, h, c='test set', c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):

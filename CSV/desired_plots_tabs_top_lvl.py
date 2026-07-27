@@ -24,11 +24,13 @@ FILES = {
 
 
 HS_SNGL = ['tr_val', 'dom', 'real', 'dist']
-HS_JOINT = ['cnt_ds', 's_lvl', 'gda_lvl', 'dk_lvl'] # comb/joint
-HS_CUM = ['SYNT use', 'DK use', 'GDA use'] # TODO by cum aggs - 9 grids
-HS_ALL = HS_SNGL + HS_JOINT
+HS_SNGL = ['tr_val']
+HS_JOINT = ['total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use']
+HS_CUM = ['cumul. no. unique DS', 'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use']
+HS_ALL = HS_SNGL + HS_CUM + HS_JOINT
 
 CH_BBV = ['bar', 'box', 'violin']
+CH_BBV = ['bar']
 CH_CAT = CH_BBV + ['line']
 
 
@@ -54,7 +56,10 @@ def rep_plts(df, x, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, t
     for ch in chs:
         if not SAVING:
             print(df.head(1))
-        g = ch_fu(df, x, y, h, col, col_order, row, row_ord, ch=ch, h_ord=h_ord, s=s, size=s)
+        if ch == 'line2':
+            g = line(df, x, y, h, col, col_order, row, row_ord, ch=ch, h_ord=h_ord, s=s, size=s)
+        else:
+            g = ch_fu(df, x, y, h, col, col_order, row, row_ord, ch=ch, h_ord=h_ord, s=s, size=s)
         g = plot_prod(g, x, y, h, bs=bs, t=tit, xl=xl, add_viol_labs=(ch == 'violin'))
         save_plt_df(df, g, fu, ch, h) # g
 
@@ -80,19 +85,23 @@ def repeat_plot(df: pd.DataFrame, fu: str, x='phase', y='IoU', hs=HS_JOINT, h_or
 def joint_plts_auto_agg_4D(df: pd.DataFrame, fl: str='joint'): # OK - add more
     '''x=phase, y=IoU, col=set, h=HS_JOINT; bar (viol, box, pt-line - może ten lineplot, nie catplot)'''
     # repeat_plot(df, f'{fl}_phase', row=None, row_ord=None, bs=[0.71, 0.617, 0.359], ch_fu=ucats, chs=['line'])
-    repeat_plot(df, f'{fl}_phase', row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV)
+
+    # repeat_plot(df, f'{fl}_phase', hs=HS_ALL, row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV)
+    repeat_plot(df, f'{fl}_phase', hs=HS_CUM, row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV)
     repeat_plot(df, f'{fl}_phase', hs=['phase'], row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV)
     repeat_plot(df, f'{fl}_phase', hs=[], row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV)
 
 
-def joint_plts_auto_agg_5D(df: pd.DataFrame, fl: str='joint'): # prawie
+def joint_plts_auto_agg_5D(df: pd.DataFrame, fl: str='joint'): # OK
     '''x=h, y=IoU, col=set, h=HS_CUM, row=phase; bar (viol, box)'''
     print(df.dtypes)
     repeat_plot(df, f'{fl}_phase', hs=HS_CUM, bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 9
     repeat_plot(df, f'{fl}_phase', hs=HS_CUM, row=None, bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 3
-    repeat_plot(df, f'{fl}_phase', bs=[0.71, 0.617, 0.359], chs=CH_BBV)
-    repeat_plot(df, f'{fl}_phase', hs=['phase'], bs=[0.71, 0.617, 0.359], chs=CH_BBV)
-    repeat_plot(df, f'{fl}_phase', hs=[], bs=[0.71, 0.617, 0.359], chs=CH_BBV)
+    # repeat_plot(df, f'{fl}_phase', bs=[0.71, 0.617, 0.359], chs=CH_BBV) # not cum
+    repeat_plot(df, f'{fl}_phase', hs=['phase'], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 9
+    repeat_plot(df, f'{fl}_phase', hs=['phase'], row=None,bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 3
+    repeat_plot(df, f'{fl}_phase', hs=[], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 9
+    repeat_plot(df, f'{fl}_phase', hs=[], row=None,bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 3
 
 
 def joint_plts_manual_agg_4D(df: pd.DataFrame, fl: str='joint'): # OK
@@ -110,13 +119,13 @@ def joint_plts_manual_agg_4D(df: pd.DataFrame, fl: str='joint'): # OK
         # repeat_plot(plot_df_workload, f'{fl}_Workload', 'Workload', hs=[h], s=h, row=None, chs=['line'], ch_fu=line) # misleading CI per IoU only
 
 
-def joint_plts_no_agg_4D(df: pd.DataFrame, fl: str='joint'): # ?
+def joint_plts_no_agg_4D(df: pd.DataFrame, fl: str='joint'): # OK
     '''x=Workload/Walltime, y=IoU, col=set, h=HS_JOINT; scatter'''
-    repeat_plot(df, f'{fl}_Walltime', 'Walltime', hs=HS_ALL, chs=['scatter'], ch_fu=rels, xl='[s]')
-    repeat_plot(df, f'{fl}_Workload', 'Workload', hs=HS_ALL, chs=['scatter'], ch_fu=rels)
+    repeat_plot(df, f'{fl}_Walltime', 'Walltime', hs=HS_ALL, row=None, chs=['scatter'], ch_fu=rels, xl='[s]')
+    repeat_plot(df, f'{fl}_Workload', 'Workload', hs=HS_ALL, row=None, chs=['scatter'], ch_fu=rels)
 
 
-def joint_plts_no_agg_5D(df: pd.DataFrame, fl: str='joint'): # ?
+def joint_plts_no_agg_5D(df: pd.DataFrame, fl: str='joint'): # OK
     '''x=Workload/Walltime, y=IoU, col=set, h=HS_SNGL, row=phase; scatter'''
     repeat_plot(df, f'{fl}_Walltime', 'Walltime', hs=HS_ALL, chs=['scatter'], ch_fu=rels, xl='[s]')
     repeat_plot(df, f'{fl}_Workload', 'Workload', hs=HS_ALL, chs=['scatter'], ch_fu=rels)
@@ -154,6 +163,7 @@ def all_joint123():
     # joint_plts_manual_agg_4D(ph123)
     joint_plts_auto_agg_5D(ph123)
     joint_plts_no_agg_4D(ph123)
+    joint_plts_no_agg_5D(ph123)
     # joint_plts_no_agg_5D(ph123)
 
 

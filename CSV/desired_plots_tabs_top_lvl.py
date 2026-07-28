@@ -189,6 +189,17 @@ def ph1_plts_auto_agg_5D(df: pd.DataFrame, fl: str='ph1'): # OK
     repeat_plot(df, f'{fl}_phase', row=None, hs=[], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # no h
 
 
+def ph1_plts_auto_agg_5D_v2(df: pd.DataFrame, fl: str='ph1'): # TODO Hparams more
+    '''x=h, y=IoU, col=set, h=HS_JOINT, row=phase; bar (viol, box)'''
+    print(df.dtypes)
+    # repeat_plot(df, f'{fl}_phase', x='h', hs=['sub', 'val', 'train'], row_ord=[1], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # x by h, xord by h
+    dfs = df[~df['sub'].isna()]
+    print('from', df.count(), 'to', dfs.count())
+    repeat_plot(dfs, f'{fl}_phase', x='hh', hs=['sub'], row_ord=[1], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # self-self x-h
+    repeat_plot(df, f'{fl}_phase', x='hh', hs=['val', 'train'], row_ord=[1], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # self-self x-h
+    # repeat_plot(df, f'{fl}_phase', hs=HPARAM_COLS_BASE, row_ord=[1], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # redundant but OK
+
+
 def concats_5D(df: pd.DataFrame, fl: str): # next
     '''x=h, y=IoU, col=set, h=HS_JOINT, row=phase; bar (viol, box)'''
     repeat_plot(df, f'{fl}_phase', row=None, hs=['phase'], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # 3
@@ -209,12 +220,20 @@ def all_concat(): # TODO treatment nie działa
 
 
 def all_1st_phase():
+    '''ph1: joit and sngl'''
     ph1 = total_df_treatment(FILES['ph1'], sngl_ph_nr=1)
     ph1_plts_auto_agg_5D(ph1)
+    ph1_plts_auto_agg_5D_v2(ph1)
+
+    ph123 = total_df_treatment(FILES['joint'], joint=True)
+    print(ph123['ema'].count())
+    ph1 = ph123[ph123['phase'] == 1]
+    ph1_plts_auto_agg_5D(ph1, 'ph1_joint')
+    ph1_plts_auto_agg_5D_v2(ph1, 'ph1_joint')
 
 
 def main():
-    all_joint123()
+    # all_joint123()
     # all_concat()
     all_1st_phase()
 

@@ -14,7 +14,7 @@ from numpy import mean
 
 
 SAVING = True
-# SAVING = False
+SAVING = False
 
 LMT = False
 
@@ -30,11 +30,12 @@ IOU_COLS_GDA = ["3_test_GDA_iou", "3_test/GDA/iou", "1_test/GDA/iou",
                 "2_test/GDA/iou", "1_test_GDA_iou", "2_test_GDA_iou"]
 RAW_IOU_COLS = ['test_SYNT_iou', 'test_GDA_iou', 'test_DK_iou']
 
-
-HPARAM_COLS_BASE = ['wd', 'epochs',  'ID', 'epochs_done', 'loss', 'val', 'lrdec', 'ema', 'epoch', 
+HPARAM_COLS_BASE_CAT = []
+HPARAM_COLS_BASE_REL = []
+HPARAM_COLS_BASE = ['wd', 'epochs', 'ID', 'epochs_done', 'loss', 'val', 'lrdec', 'ema', 'epoch', 
                     'src', 'batch_size', 'Sweep', 'warmup_epochs', 'train', 'sub',  
-                    'train_val', 'Runtime', 'fn', 'lrenc']
-CALC_COLS_BASE = ['workload', 're_t', 'do_t', 're_v', 'real', 'w_v', 'w_t', 'dom', 'do_v', 'sub_mult', 'effective workload', 'dist']
+                    'tr_val', 'Runtime', 'fn', 'lrenc']
+CALC_COLS_BASE = ['workload', 're_t', 'do_t', 're_v', 'real', 'w_v', 'w_t', 'dom', 'do_v', 'sub_mult', 'dist']
 
 SNGL_COLS_BASES = CALC_COLS_BASE + HPARAM_COLS_BASE + RAW_IOU_COLS
 JOINT_COLS_BASES = SNGL_COLS_BASES + ['Walltime', 'Workload', 'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use', 'cumul. no. unique DS'] # the cums
@@ -50,7 +51,7 @@ def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=Fals
     many operations, mainly col aggregations and df widening
     '''
     df = pd.read_csv(pth)
-    df = df.rename(columns={'Unnamed: 0': 'entry_id', 'tr_val': 'train_val'})
+    df = df.rename(columns={'Unnamed: 0': 'entry_id'})
     st = SNGL_COLS_BASES
     if limit:
         df = limit_to_successful(df, cnc, off)
@@ -63,11 +64,17 @@ def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=Fals
     if round:
         df = round_sngl_ph(df, endecja)
     df = the_major_widening(df, st, sngl_ph_nr)
-    df = df.fillna({'ema': False, 'sub': '100'}) # TODO map composite, mix to numerics 1/12 and cast to numerics, plot
+    # df.to_csv('CSV/joint_ph_charts/selected3/d/df_wide.csv')
+    df = df.rename(columns={'tr_val': 'train_val'})
+    df = df.fillna({'ema': False}) # TODO map composite, mix to numerics 1/12 and cast to numerics, plot
+    # print(df.count())
+    df.loc[(df['train'] == 's') & (df['sub'].isna()), 'sub'] = '100'
+    # print(df.count())
+    # print('prt cnt sub')
+    # df.to_csv('CSV/joint_ph_charts/selected3/d/df_fna.csv')
     df = make_categorical(df, ['phase', 'ema', 'sub', 'comb_key', 'trains', 'train_val', 'cumul. no. unique DS',
                                'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use', 'loss', 'val', 'fn',
                                'total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use', 'train', 'src', 'test set'])
-
     print(df.columns)
     print(df.head())
     return df
@@ -79,8 +86,10 @@ def make_categorical(df: pd.DataFrame, vars=['phase']):
     '''
     for x in vars:
         if x in df.columns:
-            # dt = int if x in ['phase', 'SYNT use', 'DK use', 'GDA use', 'cnt_ds', 's_lvl', 'dk_lvl', 'gda_lvl',] else pd.CategoricalDtype()
-            df[x] = pd.Categorical(df[x])
+            if x == 'sub':
+                df[x] = pd.Categorical(df[x], categories=['mix', 'composite', '15', '25', '35', '45', '55', '65', '75', '100'], ordered=True)
+            else:
+                df[x] = pd.Categorical(df[x])
     return df
 
 
@@ -88,11 +97,11 @@ def process_sngl_calcs(df: pd.DataFrame):
     '''
     sngl phase (local) aggregations
     '''
-    df['SYNT use'] = [x.count('s') for x in df['train_val']] # how many SYNTs: s, sub, subm
-    df['SYNT use'] += [x.count('_m') for x in df['train_val']] # plus how many MIXs: _m
-    df['DK use'] = [x.count('dk') for x in df['train_val']] # how many DKs: dk
-    df['DK use'] += [x.count('m') for x in df['train_val']] # plus how many MIXs: m
-    df['GDA use'] = [x.count('gda') for x in df['train_val']] # how many GDAs
+    df['SYNT use'] = [x.count('s') for x in df['tr_val']] # how many SYNTs: s, sub, subm
+    df['SYNT use'] += [x.count('_m') for x in df['tr_val']] # plus how many MIXs: _m
+    df['DK use'] = [x.count('dk') for x in df['tr_val']] # how many DKs: dk
+    df['DK use'] += [x.count('m') for x in df['tr_val']] # plus how many MIXs: m
+    df['GDA use'] = [x.count('gda') for x in df['tr_val']] # how many GDAs
     return df
 
 
@@ -125,13 +134,13 @@ def process_comb_cum_calcs(df: pd.DataFrame):
     df['2_cumul. GDA use'] = [x.count('gda') for x in df['tr_val_y']] # how many GDAs
     df['2_cumul. GDA use'] += df['1_cumul. GDA use']
 
-    df['3_cumul. SYNT use'] = [x.count('s') for x in df['train_val']] # how many SYNTs: s, sub, subm
-    df['3_cumul. SYNT use'] += [x.count('_m') for x in df['train_val']] # plus how many MIXs: _m
+    df['3_cumul. SYNT use'] = [x.count('s') for x in df['tr_val']] # how many SYNTs: s, sub, subm
+    df['3_cumul. SYNT use'] += [x.count('_m') for x in df['tr_val']] # plus how many MIXs: _m
     df['3_cumul. SYNT use'] += df['2_cumul. SYNT use']
-    df['3_cumul. DK use'] = [x.count('dk') for x in df['train_val']] # how many DKs: dk
-    df['3_cumul. DK use'] += [x.count('m') for x in df['train_val']] # plus how many MIXs: m
+    df['3_cumul. DK use'] = [x.count('dk') for x in df['tr_val']] # how many DKs: dk
+    df['3_cumul. DK use'] += [x.count('m') for x in df['tr_val']] # plus how many MIXs: m
     df['3_cumul. DK use'] += df['2_cumul. DK use']
-    df['3_cumul. GDA use'] = [x.count('gda') for x in df['train_val']] # how many GDAs
+    df['3_cumul. GDA use'] = [x.count('gda') for x in df['tr_val']] # how many GDAs
     df['3_cumul. GDA use'] += df['2_cumul. GDA use']
 
     df['Sworkload'] = df['3_Workload'] # sum
@@ -139,7 +148,7 @@ def process_comb_cum_calcs(df: pd.DataFrame):
     df['total no. unique DS'] = df['comb_key'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) # number of DSs
     df['1_cumul. no. unique DS'] = df['tr_val_x'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst))))
     df['2_cumul. no. unique DS'] = df['tr_val_y'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) + df['1_cumul. no. unique DS']
-    df['3_cumul. no. unique DS'] = df['train_val'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) + df['2_cumul. no. unique DS']
+    df['3_cumul. no. unique DS'] = df['tr_val'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) + df['2_cumul. no. unique DS']
 
     df['total SYNT use'] = [x.count('s') for x in df['comb_key']] # how many SYNTs: s, sub, subm
     df['total SYNT use'] += [x.count('_m') for x in df['comb_key']] # plus how many MIXs: _m

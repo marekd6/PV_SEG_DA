@@ -11,7 +11,7 @@ from desired_plots_tabs_atomics import *
 
 
 DIR = 'CSV/joint_ph_charts/res_dfs4'
-SAVEDIR = 'CSV/joint_ph_charts/selected3/d'
+SAVEDIR = 'CSV/joint_ph_charts/selected3/e'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
@@ -228,12 +228,12 @@ def all_1st_phase():
     ph123 = total_df_treatment(FILES['joint'], joint=True)
     print(ph123['ema'].count())
     ph1 = ph123[ph123['phase'] == 1]
-    ph1_plts_auto_agg_5D(ph1, 'ph1_joint')
+    # ph1_plts_auto_agg_5D(ph1, 'ph1_joint') # no
     ph1_plts_auto_agg_5D_v2(ph1, 'ph1_joint')
 
 
 def main():
-    # all_joint123()
+    all_joint123()
     # all_concat()
     all_1st_phase()
 

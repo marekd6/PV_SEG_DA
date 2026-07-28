@@ -73,64 +73,29 @@ def transform(raw_df):
                               "start": start, "width": width, "category": category, "label": label})
 
         # pivot the 3 test_set/iou rows into one wide row for the table
-        row = {"run": entry_id, "phase": phase}
+        row = {"run": entry_id, "phase": phase, 'bs': first['batch_size'], 'lr enc': first['lrenc'], 'lr dec': first['lrdec']}
         for _, r in group.iterrows():
-            row[r["test set"]] = r["IoU"]
+            if r['test set'] == 'GDA':
+                row[r["test set"]] = r["IoU"]
         table_rows.append(row)
 
     return pd.DataFrame(bar_rows), pd.DataFrame(table_rows)
 
-cols = ['IoU', 'phase', 'test set', 'sub', 'train', 'val', 'entry_id']
+cols = ['IoU', 'phase', 'test set', 'sub', 'train', 'val', 'entry_id', 'lrenc', 'lrdec', 'batch_size', 'total SYNT use']
 ph123 = total_df_treatment(FILES['joint'], joint=True)
 ph123 = ph123[cols]
 ph123 = ph123.sort_values(by=['entry_id', 'phase'])
-ph123 = ph123.head(9*3)
+# ph123 = ph123.head(9*5)
+ph123 = ph123[ph123['entry_id'].isin([915, 913, 396, 492])]
+ph123 = ph123.sort_values(by=['total SYNT use', 'phase'])
 print(ph123)
-
-# # Long-format inputs
-# bar_df = pd.DataFrame([
-#     # run, phase, bar_name, category, start, width
-#     ("Run A", "Phase 1", "Train", "synthetic", 0, 20),
-#     ("Run A", "Phase 1", "Train", "mixed", 20, 5),
-#     ("Run A", "Phase 1", "Val", "gda", 0, 5),
-#     ("Run A", "Phase 2", "Train", "synthetic", 0, 20),
-#     ("Run A", "Phase 2", "Train", "mixed", 20, 5),
-#     ("Run A", "Phase 2", "Val", "mixed", 0, 15),
-#     ("Run A", "Phase 3", "Train", "synthetic", 0, 20),
-#     ("Run A", "Phase 3", "Train", "gda", 20, 5),
-#     ("Run A", "Phase 3", "Val", "gda", 0, 5),
-
-#     ("Run B", "Phase 1", "Train", "synthetic", 0, 20),
-#     ("Run B", "Phase 1", "Train", "mixed", 20, 5),
-#     ("Run B", "Phase 1", "Val", "gda", 0, 5),
-#     ("Run B", "Phase 2", "Train", "synthetic", 0, 20),
-#     ("Run B", "Phase 2", "Train", "mixed", 20, 5),
-#     ("Run B", "Phase 2", "Val", "mixed", 0, 15),
-#     ("Run B", "Phase 2", "Val", "gda", 15, 10),
-#     ("Run B", "Phase 3", "Train", "synthetic", 0, 20),
-#     ("Run B", "Phase 3", "Train", "gda", 20, 5),
-#     ("Run B", "Phase 3", "Val", "gda", 0, 5),
-# ], columns=["run", "phase", "bar_name", "category", "start", "width"])
-# # run, phase, tr/val type, DS part, start, width
-
-# table_df = pd.DataFrame([
-#     # run, phase, <param columns...>
-#     ("Run A", "Phase 1", "3e-4", "32", "20"),
-#     ("Run A", "Phase 2", "3e-4", "32", "20"),
-#     ("Run A", "Phase 3", "3e-4", "32", "20"),
-
-#     ("Run B", "Phase 1", "3e-4", "32", "20"),
-#     ("Run B", "Phase 2", "3e-4", "32", "20"),
-#     ("Run B", "Phase 3", "3e-4", "32", "20"),
-# ], columns=["run", "phase", "lr", "batch", "epochs"])
-# # run, phase, params1,2,3, IoUa,b,c
 
 bar_df, table_df = transform(ph123)
 print(bar_df)
 print(table_df)
 print(table_df.dtypes)
 
-category_colors = {"Synthetic": "#4C72B0", "DK": "#DD8452", "GDA": "#55A868"}
+category_colors = {"DK": "#4C72B0", "GDA": "#DD8452", "Synthetic": "#55A868"}
 records = bar_df["run"].unique().tolist()
 phases = bar_df["phase"].unique().tolist()
 
@@ -141,7 +106,24 @@ def get_segments(run, phase, bar_name):
 def get_table_row(run, phase):
     sub = table_df[(table_df.run == run) & (table_df.phase == phase)]
     param_cols = [c for c in table_df.columns if c not in ("run", "phase")]
-    # return sub[param_cols].values.tolist(), param_cols
+    tv = sub[param_cols].values[0]
+    ks, vs = [], []
+    for k, v in zip(param_cols, tv):
+        kk, vv = k, v
+        if 'lr' in k:
+            vv = f'{v:.0e}'
+        else:
+            vv = f'{v:.0f}'
+        if k in ['DK', 'GDA', 'SYNT']:
+            kk = k
+            if k == 'SYNT':
+                kk = 'SYNTHETIC'
+            # kk = 'IoU' + ' ' + kk
+            vv = f"{v:.3f}"
+        ks.append(kk)
+        vs.append(vv)
+    return [vs], ks
+    print('tv', tv)
     return [[f"{x:.3f}" for x in row] for row in sub[param_cols].values.tolist()], param_cols
 
 def draw_phase_block(fig, gs, row_idx, col_start, run, phase, label_min_width=3, bar_height=2):
@@ -171,36 +153,39 @@ def draw_phase_block(fig, gs, row_idx, col_start, run, phase, label_min_width=3,
     table.auto_set_font_size(False); table.set_fontsize(8); table.scale(1, 1.6)
 
 n_records, n_phases = len(records), len(phases)
-# fig = plt.figure(figsize=(5 * n_phases + 1.5, 2.0 * n_records + 1.5))
 fig = plt.figure()
 gs = gridspec.GridSpec(
     n_records + 1, 1 + n_phases * 3,
-    # width_ratios=[0.2] + [1.6, 1.6, 1.4] * n_phases,
-    width_ratios=[0.15] + [1, 1, 1] * n_phases,
+    width_ratios=[0.15] + [1, 1, 3.5] * n_phases,
     height_ratios=[0.15] + [1] * n_records,
-    hspace=0.25, wspace=0.5,
-    left=0.05, right=0.98,
-    top=0.9, bottom=0.1,
+    hspace=0.25, 
+    # wspace=0.5,
+    left=0.01, right=0.98,
+    top=0.95, bottom=0.08,
 )
 
+# col_start = 0
+# ax = fig.add_subplot(gs[0, col_start:col_start + 1]); #ax.axis("off")
+# axes.Axes().text()
+# ax.text(0, 1, 'Synthetic use', fontweight="bold", rotation=90)
+# ax.text(0.5, 0.2, 'Synthetic use', fontweight="bold", ha="center", va="center")
 for p, phase in enumerate(phases):
     col_start = 1 + p * 3
     ax = fig.add_subplot(gs[0, col_start:col_start + 3]); ax.axis("off")
-    ax.text(0.5, 0.2, f'phase = {phase}', fontsize=13, fontweight="bold", ha="center", va="center")
+    ax.text(0.5, 0.2, f'phase = {phase}', fontweight="bold", ha="center", va="center") # fontsize=13, 
+
+run_to_s_lvl = {915: 1, 913: 2, 396: 3, 492: 4}
 
 for r, run in enumerate(records):
     row_idx = r + 1
     ax_label = fig.add_subplot(gs[row_idx, 0]); ax_label.axis("off")
-    ax_label.text(0.5, 0.5, run, fontsize=11, fontweight="bold",
-                  ha="center", va="center", rotation=90)
+    ax_label.text(0.5, 0.5, run_to_s_lvl[run], fontweight="bold", # r+1
+                  ha="center", va="center", rotation=90) # fontsize=11, 
     for p, phase in enumerate(phases):
         draw_phase_block(fig, gs, row_idx, 1 + p * 3, run, phase)
 
 legend_handles = [Patch(facecolor=c, label=cat) for cat, c in category_colors.items()]
 fig.legend(handles=legend_handles, loc="lower center", ncol=len(category_colors),
-           frameon=False, 
-        #    bbox_to_anchor=(0.5, -0.02), 
-           fontsize=10)
-# fig.suptitle("Per-phase training summary", fontsize=15, y=0.99)
-# plt.tight_layout(rect=[0, 0.04, 1, 0.96])
+           frameon=False, fontsize=10)
+fig.suptitle('Top scenarios by Synthetic use level')
 plt.show()

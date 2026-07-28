@@ -30,12 +30,10 @@ IOU_COLS_GDA = ["3_test_GDA_iou", "3_test/GDA/iou", "1_test/GDA/iou",
                 "2_test/GDA/iou", "1_test_GDA_iou", "2_test_GDA_iou"]
 RAW_IOU_COLS = ['test_SYNT_iou', 'test_GDA_iou', 'test_DK_iou']
 
-HPARAM_COLS_BASE_CAT = []
-HPARAM_COLS_BASE_REL = []
-HPARAM_COLS_BASE = ['wd', 'epochs', 'ID', 'epochs_done', 'loss', 'val', 'lrdec', 'ema', 'epoch', 
-                    'src', 'batch_size', 'Sweep', 'warmup_epochs', 'train', 'sub',  
-                    'tr_val', 'Runtime', 'fn', 'lrenc']
-CALC_COLS_BASE = ['workload', 're_t', 'do_t', 're_v', 'real', 'w_v', 'w_t', 'dom', 'do_v', 'sub_mult', 'dist']
+HPARAM_COLS_BASE_CAT = ['train', 'sub', 'tr_val', 'loss', 'val', 'src', 'batch_size', 'wd', 'lrdec', 'ema', 'warmup_epochs', 'lrenc']
+HPARAM_COLS_BASE_REL = ['Runtime', 'workload']
+HPARAM_COLS_BASE = ['epochs', 'ID', 'epochs_done', 'epoch', 'Sweep', 'fn', ] + HPARAM_COLS_BASE_CAT + HPARAM_COLS_BASE_REL
+CALC_COLS_BASE = ['re_t', 'do_t', 're_v', 'real', 'w_v', 'w_t', 'dom', 'do_v', 'sub_mult', 'dist']
 
 SNGL_COLS_BASES = CALC_COLS_BASE + HPARAM_COLS_BASE + RAW_IOU_COLS
 JOINT_COLS_BASES = SNGL_COLS_BASES + ['Walltime', 'Workload', 'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use', 'cumul. no. unique DS'] # the cums

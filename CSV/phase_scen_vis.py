@@ -176,19 +176,21 @@ fig = plt.figure()
 gs = gridspec.GridSpec(
     n_records + 1, 1 + n_phases * 3,
     # width_ratios=[0.2] + [1.6, 1.6, 1.4] * n_phases,
-    width_ratios=[0.2] + [1, 1, 1] * n_phases,
-    height_ratios=[1] + [1] * n_records,
-    hspace=0.1, wspace=0.7,
+    width_ratios=[0.15] + [1, 1, 1] * n_phases,
+    height_ratios=[0.15] + [1] * n_records,
+    hspace=0.25, wspace=0.5,
+    left=0.05, right=0.98,
+    top=0.9, bottom=0.1,
 )
 
 for p, phase in enumerate(phases):
     col_start = 1 + p * 3
-    ax = fig.add_subplot(gs[0, col_start:col_start + 3]); #ax.axis("off")
+    ax = fig.add_subplot(gs[0, col_start:col_start + 3]); ax.axis("off")
     ax.text(0.5, 0.2, f'phase = {phase}', fontsize=13, fontweight="bold", ha="center", va="center")
 
 for r, run in enumerate(records):
     row_idx = r + 1
-    ax_label = fig.add_subplot(gs[row_idx, 0]); #ax_label.axis("off")
+    ax_label = fig.add_subplot(gs[row_idx, 0]); ax_label.axis("off")
     ax_label.text(0.5, 0.5, run, fontsize=11, fontweight="bold",
                   ha="center", va="center", rotation=90)
     for p, phase in enumerate(phases):
@@ -196,7 +198,9 @@ for r, run in enumerate(records):
 
 legend_handles = [Patch(facecolor=c, label=cat) for cat, c in category_colors.items()]
 fig.legend(handles=legend_handles, loc="lower center", ncol=len(category_colors),
-           frameon=False, bbox_to_anchor=(0.5, -0.02), fontsize=10)
+           frameon=False, 
+        #    bbox_to_anchor=(0.5, -0.02), 
+           fontsize=10)
 # fig.suptitle("Per-phase training summary", fontsize=15, y=0.99)
 # plt.tight_layout(rect=[0, 0.04, 1, 0.96])
 plt.show()

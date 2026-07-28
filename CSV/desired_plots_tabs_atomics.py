@@ -46,9 +46,9 @@ GLOB_FIXED_COLS = ['comb_key', 'trains', 'Sworkload', 'total no. unique DS', 'to
              'Sdom', 'Sreal', 'DS_score_raw', 'DS_score', 'ddiff'] + SNGL_FIXED_COLS
 
 
-def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=False, off=not LMT, endecja=0, sngl_ph_nr=None):
+def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=False, off=not LMT, endecja=0, sngl_ph_nr=3):
     '''
-    many operations, mainly col aggregations and df widening
+    many operations, mainly col aggregations and df elongation
     '''
     df = pd.read_csv(pth)
     df = df.rename(columns={'Unnamed: 0': 'entry_id'})
@@ -63,7 +63,7 @@ def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=Fals
         st = SNGL_COLS_BASES + ['SYNT use', 'DK use', 'GDA use']
     if round:
         df = round_sngl_ph(df, endecja)
-    df = the_major_widening(df, st, sngl_ph_nr)
+    df = the_major_elongation(df, st, sngl_ph_nr)
     # df.to_csv('CSV/joint_ph_charts/selected3/d/df_wide.csv')
     df = df.rename(columns={'tr_val': 'train_val'})
     df = df.fillna({'ema': False}) # TODO map composite, mix to numerics 1/12 and cast to numerics, plot
@@ -71,10 +71,10 @@ def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=Fals
     df.loc[(df['train'] == 's') & (df['sub'].isna()), 'sub'] = '100'
     # print(df.count())
     # print('prt cnt sub')
-    # df.to_csv('CSV/joint_ph_charts/selected3/d/df_fna.csv')
     df = make_categorical(df, ['phase', 'ema', 'sub', 'comb_key', 'trains', 'train_val', 'cumul. no. unique DS',
                                'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use', 'loss', 'val', 'fn',
                                'total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use', 'train', 'src', 'test set'])
+    df.to_csv('CSV/joint_ph_charts/selected3/e/df_fna.csv')
     print(df.columns)
     print(df.head())
     return df
@@ -198,11 +198,11 @@ def limit_to_successful(df: pd.DataFrame, cnc=False, off=not LMT):
     return df[df[iou] > 0.617]
 
 
-def the_major_widening(df: pd.DataFrame, stubs=SNGL_COLS_BASES, sngl_ph_nr=None):
+def the_major_elongation(df: pd.DataFrame, stubs=SNGL_COLS_BASES, sngl_ph_nr=None):
     '''
-    unify naming convention of cols, widen params, widen IoUs
+    unify naming convention of cols, elongate params, elongate IoUs
     '''
-    print('entered the_major_widening')
+    print('entered the_major_elongation')
     rename_map = {}
     for col in df.columns:
         # untouched columns
@@ -236,6 +236,8 @@ def the_major_widening(df: pd.DataFrame, stubs=SNGL_COLS_BASES, sngl_ph_nr=None)
 
         rename_map[col] = f"{base}_{num}"
 
+    print('the rename map is')
+    print(rename_map)
     df = df.rename(columns=rename_map)
     # pd.set_option('display.max_columns', None)
     if not SAVING:
@@ -258,7 +260,7 @@ def the_major_widening(df: pd.DataFrame, stubs=SNGL_COLS_BASES, sngl_ph_nr=None)
     df['test set'] = df['phase_set'].str.split('_', n=2, expand=True)[1]
     df = df.drop(columns=['phase_set'])
     print(df.shape)
-    print('done IoU sets and whole the_major_widening')
+    print('done IoU sets and whole the_major_elongation')
     return df
 
 

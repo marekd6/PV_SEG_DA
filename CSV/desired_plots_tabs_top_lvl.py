@@ -11,7 +11,7 @@ from desired_plots_tabs_atomics import *
 
 
 DIR = 'CSV/joint_ph_charts/res_dfs4'
-SAVEDIR = 'CSV/joint_ph_charts/selected3/e'
+SAVEDIR = 'CSV/joint_ph_charts/selected3/f'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
@@ -34,7 +34,8 @@ CH_CAT = CH_BBV + ['line']
 
 def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=False, swap_dir_ord=False, xtra=''):
     if SAVING:
-        keyy = str(keyy) + '_' + xtra
+        if xtra != '':
+            keyy = str(keyy) + '_' + xtra
         d = f'{SAVEDIR}/{keyy}/{fu_name}'
         if swap_dir_ord:
             d = f'{SAVEDIR}/{fu_name}/{keyy}'

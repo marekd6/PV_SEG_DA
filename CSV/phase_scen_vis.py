@@ -73,7 +73,8 @@ def transform(raw_df):
                               "start": start, "width": width, "category": category, "label": label})
 
         # pivot the 3 test_set/iou rows into one wide row for the table
-        row = {"run": entry_id, "phase": phase, 'bs': first['batch_size'], 'lr enc': first['lrenc'], 'lr dec': first['lrdec']}
+        row = {"run": entry_id, "phase": phase, 'bs': first['batch_size'], 'epochs': first['epochs'],
+               'lr enc': first['lrenc'], 'lr dec': first['lrdec'], 'wd': first['wd']}
         for _, r in group.iterrows():
             if r['test set'] == 'GDA':
                 row[r["test set"]] = r["IoU"]
@@ -81,19 +82,21 @@ def transform(raw_df):
 
     return pd.DataFrame(bar_rows), pd.DataFrame(table_rows)
 
-cols = ['IoU', 'phase', 'test set', 'sub', 'train', 'val', 'entry_id', 'lrenc', 'lrdec', 'batch_size', 'total SYNT use']
+cols = HPARAM_COLS_BASE_CAT + ['IoU', 'phase', 'test set', 'entry_id', 'total SYNT use', 'epochs']
 ph123 = total_df_treatment(FILES['joint'], joint=True)
+cols = list(set(cols) & set(ph123.columns))
 ph123 = ph123[cols]
 ph123 = ph123.sort_values(by=['entry_id', 'phase'])
-# ph123 = ph123.head(9*5)
 ph123 = ph123[ph123['entry_id'].isin([915, 913, 396, 492])]
 ph123 = ph123.sort_values(by=['total SYNT use', 'phase'])
-print(ph123)
+if not SAVING:
+    print(ph123)
 
 bar_df, table_df = transform(ph123)
-print(bar_df)
-print(table_df)
-print(table_df.dtypes)
+if not SAVING:
+    print(bar_df)
+    print(table_df)
+    print(table_df.dtypes)
 
 category_colors = {"DK": "#4C72B0", "GDA": "#DD8452", "Synthetic": "#55A868"}
 records = bar_df["run"].unique().tolist()
@@ -110,7 +113,7 @@ def get_table_row(run, phase):
     ks, vs = [], []
     for k, v in zip(param_cols, tv):
         kk, vv = k, v
-        if 'lr' in k:
+        if 'lr' in k or k == 'wd':
             vv = f'{v:.0e}'
         else:
             vv = f'{v:.0f}'
@@ -123,8 +126,6 @@ def get_table_row(run, phase):
         ks.append(kk)
         vs.append(vv)
     return [vs], ks
-    print('tv', tv)
-    return [[f"{x:.3f}" for x in row] for row in sub[param_cols].values.tolist()], param_cols
 
 def draw_phase_block(fig, gs, row_idx, col_start, run, phase, label_min_width=3, bar_height=2):
     for b, bar_name in enumerate(["Train", "Val"]):
@@ -153,10 +154,10 @@ def draw_phase_block(fig, gs, row_idx, col_start, run, phase, label_min_width=3,
     table.auto_set_font_size(False); table.set_fontsize(8); table.scale(1, 1.6)
 
 n_records, n_phases = len(records), len(phases)
-fig = plt.figure()
+fig = plt.figure(figsize=(11.7, 8.3))
 gs = gridspec.GridSpec(
     n_records + 1, 1 + n_phases * 3,
-    width_ratios=[0.15] + [1, 1, 3.5] * n_phases,
+    width_ratios=[0.15] + [1, 1, 5.5] * n_phases,
     height_ratios=[0.15] + [1] * n_records,
     hspace=0.25, 
     # wspace=0.5,
@@ -164,11 +165,6 @@ gs = gridspec.GridSpec(
     top=0.95, bottom=0.08,
 )
 
-# col_start = 0
-# ax = fig.add_subplot(gs[0, col_start:col_start + 1]); #ax.axis("off")
-# axes.Axes().text()
-# ax.text(0, 1, 'Synthetic use', fontweight="bold", rotation=90)
-# ax.text(0.5, 0.2, 'Synthetic use', fontweight="bold", ha="center", va="center")
 for p, phase in enumerate(phases):
     col_start = 1 + p * 3
     ax = fig.add_subplot(gs[0, col_start:col_start + 3]); ax.axis("off")
@@ -188,4 +184,8 @@ legend_handles = [Patch(facecolor=c, label=cat) for cat, c in category_colors.it
 fig.legend(handles=legend_handles, loc="lower center", ncol=len(category_colors),
            frameon=False, fontsize=10)
 fig.suptitle('Top scenarios by Synthetic use level')
-plt.show()
+if SAVING:
+    fig.savefig(f'{SAVEDIR}/top_scens_by_synth.png')
+    plt.close()
+else:
+    plt.show()

@@ -304,9 +304,11 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
             row=r,
             row_order=r_ord,
             palette=sns.color_palette(),
+            # cut=1,
             cut=0,
             density_norm='count',
             order=xord,
+            aspect=1.8,
         )
     return sns.catplot(
         data=df,
@@ -426,6 +428,8 @@ def plot_prod(g, x, y, h, t='', bs=None, xl='', min_max_labs=pd.DataFrame()):
     # if add_viol_labs:
     mrg = 0.003
     if not min_max_labs.empty:
+        if 'phase' in min_max_labs.columns:
+            min_max_labs = min_max_labs.sort_values(by=['phase', 'test set'])
         if not SAVING:
             print(min_max_labs.head(7))
         for ax in g.axes.flat: # correct viol data via cut=0
@@ -439,6 +443,16 @@ def plot_prod(g, x, y, h, t='', bs=None, xl='', min_max_labs=pd.DataFrame()):
                     ax.text(x_center, ymin-mrg, f"{ymin:.3f}", ha="center", va="top")
                     ax.text(x_center, ymax+mrg, f"{ymax:.3f}", ha="center", va="bottom")
         # for ax in g.axes.flat:
+        #     violins = [c for c in ax.collections if isinstance(c, collections.PolyCollection)]
+        #     for v, mi, ma in zip(violins, min_max_labs['min'], min_max_labs['max']):
+        #         if len(v.get_paths()) > 0:
+        #             verts = v.get_paths()[0].vertices
+        #             y_vals = verts[:, 1]
+        #             ymin, ymax = mi, ma
+        #             x_center = mean(verts[:, 0])    
+        #             ax.text(x_center, ymin-mrg, f"{ymin:.3f}", ha="center", va="top")
+        #             ax.text(x_center, ymax+mrg, f"{ymax:.3f}", ha="center", va="bottom")
+        # for ax in g.axes.flat:
         #     facet_name = ax.get_title().split('|') # ['phase = 1 ', ' test set = DK']
         #     print(facet_name)
         #     if len(facet_name) > 1:
@@ -451,18 +465,20 @@ def plot_prod(g, x, y, h, t='', bs=None, xl='', min_max_labs=pd.DataFrame()):
         #         print(row)
         #     else:
         #         tst = facet_name[0].strip().split(' =')[1]
+        #         row = min_max_labs[min_max_labs['test set'] == tst]
         #     # row = min_max_labs[min_max_labs['test set'] == facet_name].iloc[0]
         #     violins = [c for c in ax.collections if isinstance(c, collections.PolyCollection)]
         #     for i, v in enumerate(violins):
-        #         verts = v.get_paths()[0].vertices
-        #         ymin = row['min'].iloc[i]
-        #         ymax = row['max'].iloc[i]
-        #         print(ymin, ymax)
-                
-        #         # x-position of the violin center
-        #         x_center = mean(verts[:, 0])
-                
-        #         ax.text(x_center, ymin, f"{ymin:.3f}", ha="center", va="top")
-        #         ax.text(x_center, ymax, f"{ymax:.3f}", ha="center", va="bottom")
-                # axes.Axes().text()
+        #         if len(v.get_paths()) > 0:
+        #             verts = v.get_paths()[0].vertices
+        #             ymin = row['min'].iloc[i]
+        #             ymax = row['max'].iloc[i]
+        #             print(ymin, ymax)
+                    
+        #             # x-position of the violin center
+        #             x_center = mean(verts[:, 0])
+                    
+        #             ax.text(x_center, ymin, f"{ymin:.3f}", ha="center", va="top")
+        #             ax.text(x_center, ymax, f"{ymax:.3f}", ha="center", va="bottom")
+        #             # axes.Axes().text()
     return g

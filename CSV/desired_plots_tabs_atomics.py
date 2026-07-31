@@ -10,11 +10,14 @@ import pandas as pd
 import seaborn as sns
 import seaborn.objects as so
 import re
-from numpy import mean
-
+import numpy as np
+from new_workload import expand_long
 
 SAVING = True
-SAVING = False
+# SAVING = False
+
+SAVEDIR = 'CSV/joint_ph_charts/selected3/g'
+SAVEDIR = 'joint_ph_charts/selected3/h'
 
 LMT = False
 
@@ -62,17 +65,23 @@ def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=Fals
     if round:
         df = round_sngl_ph(df, endecja)
     df = the_major_elongation(df, st, sngl_ph_nr)
-    # df.to_csv('CSV/joint_ph_charts/selected3/d/df_wide.csv')
+    df.to_csv(f'{SAVEDIR}/df_wide.csv')
     df = df.rename(columns={'tr_val': 'train_val'})
     df = df.fillna({'ema': False}) # TODO map composite, mix to numerics 1/12 and cast to numerics, plot
     # print(df.count())
     df.loc[(df['train'] == 's') & (df['sub'].isna()), 'sub'] = '100'
     # print(df.count())
     # print('prt cnt sub')
+    if joint:
+            df = expand_long(df, 'entry_id', 'phase')
+            df = df.sort_values(by=['entry_id', 'phase', 'test set'])
+            df[['Nworkload', 'workload_delta']] = df[['Nworkload', 'workload_delta']].bfill()
+            # df = df.rename(columns={'Nworkload': 'Workload'})
+            # df = pd.merge(left=df, right=dfw, how='left', on=['entry_id', 'phase', 'test set'])
     df = make_categorical(df, ['phase', 'ema', 'sub', 'comb_key', 'trains', 'train_val', 'cumul. no. unique DS',
                                'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use', 'loss', 'val', 'fn',
                                'total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use', 'train', 'src', 'test set'])
-    df.to_csv('CSV/joint_ph_charts/selected3/e/df_fna.csv')
+    df.to_csv(f'{SAVEDIR}/df_fna.csv')
     print(df.columns)
     print(df.head())
     return df
@@ -103,9 +112,219 @@ def process_sngl_calcs(df: pd.DataFrame):
     return df
 
 
+def standardise_runtime_gpus():
+    pass # TODO
+
+
+# to jednak SYNTH/DK use też tak?? nie - tam zwykła liczność, 
+# tu (workload) - ile wygenerowanych (praca) w użyciu (użyteczna praca), nie ile razy użyte
+
+
+# def _parse_calc_comb_key_workload(comb_key: pd.Series, sub_mult: pd.Series, ph: int):
+#     '''
+#     :param comb_key: substring (cumulative) to process
+#     :param sub_mult: fraction (to map with a dict) for synth tr, else 1
+#     '''
+#     # already done:
+#     # S_SUB_S_FCT = {
+#     #     'mix': 100/12,
+#     #     'composite': 100/12
+#     # }
+#     # sub_map = df['sub'].map(S_SUB_S_FCT) # mix
+#     # df['sub_mult'] = sub_map.fillna(df['sub']) # numb
+#     # df['sub_mult'] = df['sub_mult'].fillna(100) # NaN - no sub
+#     # df['sub_mult'] = df['sub_mult'].astype(float) / 100
+
+#     # and also previous solution with mix handling but wrong cumulation later (here separate phase values)
+#     # def add_workload(df: pd.DataFrame, fn='') -> pd.DataFrame:
+#     # # train
+#     # msk = df['train'].isin(['m', 'subm'])
+#     # w_t_base = df['train'].map(DS_W_MULT) * df['train'].map(DS_SIZES_TR) * df['sub_mult'] # sub_mult == 1 for non SYNT
+#     # w_t_m = (
+#     #     DS_W_MULT['s'] * DS_SIZES_TR['s'] * df['sub_mult'] +
+#     #     DS_W_MULT['dk'] * DS_SIZES_TR['dk']    
+#     # )
+#     # df['w_t'] = w_t_base.where(~msk, w_t_m)
+
+#     # # val
+#     # if (len(fn.split('_')) > 3): # ph3
+#     #     msk = df['val'] == 'gda'
+#     #     w_v_base = df['val'].map(DS_W_MULT) * df['val'].map(DS_SIZES_VAL)
+#     #     w_v_m = (
+#     #         DS_W_MULT['gda'] * DS_SIZES_VAL['gda_v']
+#     #     )
+#     #     df['w_v'] = w_v_base.where(~msk, w_v_m)
+#     # else:
+#     #     msk = df['val'].isin(['m', 'subm'])
+#     #     w_v_base = df['val'].map(DS_W_MULT) * df['val'].map(DS_SIZES_VAL)
+#     #     w_v_m = (
+#     #         DS_W_MULT['s'] * DS_SIZES_VAL['s'] +
+#     #         DS_W_MULT['dk'] * DS_SIZES_VAL['dk']
+#     #     )
+#     #     df['w_v'] = w_v_base.where(~msk, w_v_m)
+
+#     # # final
+#     # df['workload'] = df['w_t'] + df['w_v']
+#     # return df
+
+#     DS_SIZES_TR = {
+#         's': 8614,
+#         'sub': 8614, # s, later mult
+#         'dk': 324,
+#         'gda': 18,
+#     }
+#     DS_SIZES_VAL = {
+#         's': 1846,
+#         'sub': 1846, # s, later mult
+#         'dk': 160,
+#         'gda': 20,
+#         'gda_v': 2,
+#     }
+#     DS_W_MULT = {
+#         's': 0.1,
+#         'sub': 0.1,
+#         'gda': 1,
+#         'dk': 1,
+#     }
+#     if ph == 2:
+#         p1, p2 = comb_key.str.split('|') # dk_gda|sub_gda
+#         t1, v1 = p1.split('_')
+#         t2, v2 = p2.split('_')
+#         ts = max(t1.map(DS_SIZES_TR)*t1.map(DS_W_MULT)*sub_mult, t2.map(DS_SIZES_TR)*t2.map(DS_W_MULT)*sub_mult) # if t1 & t2 == 's' or 'sub'
+#         vs = max(v1.map(DS_SIZES_VAL)*v1.map(DS_W_MULT), v2.map(DS_SIZES_VAL)*v2.map(DS_W_MULT)) # if v1 & v2 == 's' or 'sub'
+#         tdk = max(t1.map(DS_SIZES_TR)*t1.map(DS_W_MULT)*sub_mult, t2.map(DS_SIZES_TR)*t2.map(DS_W_MULT)*sub_mult) # if t1 & t2 == 'dk'
+#         vdk = max(v1.map(DS_SIZES_VAL)*v1.map(DS_W_MULT), v2.map(DS_SIZES_VAL)*v2.map(DS_W_MULT)) # if v1 & v2 == 'dk'
+#         tgda = max(t1.map(DS_SIZES_TR)*t1.map(DS_W_MULT)*sub_mult, t2.map(DS_SIZES_TR)*t2.map(DS_W_MULT)*sub_mult) # if t1 & t2 == 'gda'
+#         vgda = max(v1.map(DS_SIZES_VAL)*v1.map(DS_W_MULT), v2.map(DS_SIZES_VAL)*v2.map(DS_W_MULT)) # if v1 & v2 == 'gda'
+#         for series in [ts, vs, tdk, ]:
+#             series = series.fillna(0)
+#         return ts+vs+tdk+vdk+tgda+vgda
+#     if ph == 3:
+#         p1, p2, p3 = comb_key.str.split('|') # dk_gda|sub_gda|subm_dk
+#         t1, v1 = p1.split('_')
+#         t2, v2 = p2.split('_')
+#         t3, v3 = p3.split('_')
+#         ts = max(t1.map(DS_SIZES_TR)*t1.map(DS_W_MULT)*sub_mult, 
+#                  t2.map(DS_SIZES_TR)*t2.map(DS_W_MULT)*sub_mult,
+#                  t3.map(DS_SIZES_TR)*t3.map(DS_W_MULT)*sub_mult,) # if t1 & t2 == 's' or 'sub'
+
+
+
+# def _parse_calc_comb_key_workload(comb_key: pd.Series, sub_mult: pd.Series, ph: int) -> pd.Series:
+#     '''
+#     Calculates cumulative workload metric across training phases.
+#     Takes max of dataset variants across phases to avoid double-counting.
+#     Unfolds dataset mixes ('m', 'subm') into their base dataset components.
+    
+#     :param comb_key: pd.Series of strings (e.g., "dk_gda|subm_gda" or "dk_gda|subm_gda|s_gda")
+#     :param sub_mult: pd.Series of floats representing synthetic fraction (already processed)
+#     :param ph: int, number of phases (1, 2, or 3)
+#     :return: pd.Series of cumulative workloads
+#     '''
+    
+#     DS_SIZES_TR = {
+#         's': 8614,
+#         'sub': 8614,
+#         'dk': 324,
+#         'gda': 18,
+#     }
+#     DS_SIZES_VAL = {
+#         's': 1846,
+#         'sub': 1846,
+#         'dk': 160,
+#         'gda': 20,
+#         'gda_v': 2,
+#     }
+#     DS_W_MULT = {
+#         's': 0.1,
+#         'sub': 0.1,
+#         'gda': 1.0,
+#         'dk': 1.0,
+#     }
+
+#     n_rows = len(comb_key)
+    
+#     # Initialize accumulators to track the MAXIMUM workload seen for each base component
+#     max_tr_synth = np.zeros(n_rows)
+#     max_tr_dk = np.zeros(n_rows)
+#     max_tr_gda = np.zeros(n_rows)
+    
+#     max_val_synth = np.zeros(n_rows)
+#     max_val_dk = np.zeros(n_rows)
+#     max_val_gda = np.zeros(n_rows)
+    
+#     # Based on the old code: phase 3 experiments use the 'gda_v' size for val
+#     val_gda_size = DS_SIZES_VAL['gda_v'] if ph >= 3 else DS_SIZES_VAL['gda']
+    
+#     # Pre-extract strings to avoid multiple str operations
+#     # expand=True creates a DataFrame where columns are phases 0, 1, (and 2)
+#     phases_split = comb_key.str.split('|', expand=True)
+    
+#     # Keep sub_mult as a fast numpy array to avoid Pandas index alignment issues in loops
+#     sub_mult_arr = sub_mult.to_numpy()
+
+#     for p in range(ph):
+#         if p >= phases_split.shape[1]:
+#             break
+            
+#         # Extract train and val strings for the current phase
+#         phase_str = phases_split[p].fillna('_')
+#         tv_split = phase_str.str.split('_', expand=True)
+        
+#         t_col = tv_split[0] if 0 < tv_split.shape[1] else pd.Series(index=comb_key.index, dtype=str).fillna('')
+#         v_col = tv_split[1] if 1 < tv_split.shape[1] else pd.Series(index=comb_key.index, dtype=str).fillna('')
+
+#         # Create numpy masks for fast filtering
+#         t_is_synth = t_col.isin(['s', 'sub']).to_numpy()
+#         t_is_mix   = t_col.isin(['m', 'subm']).to_numpy()
+#         t_is_dk    = (t_col == 'dk').to_numpy()
+#         t_is_gda   = (t_col == 'gda').to_numpy()
+
+#         v_is_synth = v_col.isin(['s', 'sub']).to_numpy()
+#         v_is_mix   = v_col.isin(['m', 'subm']).to_numpy()
+#         v_is_dk    = (v_col == 'dk').to_numpy()
+#         v_is_gda   = (v_col == 'gda').to_numpy()
+
+#         # ====================
+#         # TRAIN CALCULATION
+#         # ====================
+#         # Note: According to your old 'm' logic, sub_mult should ONLY scale the synthetic ('s') portion.
+#         # dk and gda maintain their full size regardless of the synthetic subset factor.
+#         curr_tr_synth = np.where(t_is_synth | t_is_mix, DS_SIZES_TR['s'] * DS_W_MULT['s'] * sub_mult_arr, 0.0)
+#         curr_tr_dk    = np.where(t_is_dk | t_is_mix, DS_SIZES_TR['dk'] * DS_W_MULT['dk'], 0.0)
+#         curr_tr_gda   = np.where(t_is_gda, DS_SIZES_TR['gda'] * DS_W_MULT['gda'], 0.0)
+
+#         max_tr_synth = np.maximum(max_tr_synth, curr_tr_synth)
+#         max_tr_dk    = np.maximum(max_tr_dk, curr_tr_dk)
+#         max_tr_gda   = np.maximum(max_tr_gda, curr_tr_gda)
+
+#         # ====================
+#         # VAL CALCULATION
+#         # ====================
+#         # Note: Validation never uses sub_mult in your original code.
+#         curr_val_synth = np.where(v_is_synth | v_is_mix, DS_SIZES_VAL['s'] * DS_W_MULT['s'], 0.0)
+#         curr_val_dk    = np.where(v_is_dk | v_is_mix, DS_SIZES_VAL['dk'] * DS_W_MULT['dk'], 0.0)
+#         curr_val_gda   = np.where(v_is_gda, val_gda_size * DS_W_MULT['gda'], 0.0)
+
+#         max_val_synth = np.maximum(max_val_synth, curr_val_synth)
+#         max_val_dk    = np.maximum(max_val_dk, curr_val_dk)
+#         max_val_gda   = np.maximum(max_val_gda, curr_val_gda)
+
+#     # Sum the highest recorded usages of every base dataset piece across all phases
+#     total_workload = (
+#         max_tr_synth + max_tr_dk + max_tr_gda +
+#         max_val_synth + max_val_dk + max_val_gda
+#     )
+    
+#     return pd.Series(total_workload, index=comb_key.index, name='workload')
+
+
+
+
+
 def process_comb_cum_calcs(df: pd.DataFrame):
     '''
-    operates on the joint df
+    operates on the wide joint df
 
     add walltime, workload, levels, cnts
     '''
@@ -113,9 +332,9 @@ def process_comb_cum_calcs(df: pd.DataFrame):
     df['2_Walltime'] = df['Runtime_y'] + df['1_Walltime']
     df['3_Walltime'] = df['Runtime'] + df['2_Walltime']
 
-    df['1_Workload'] = df['workload_x']
-    df['2_Workload'] = df['workload_y'] + df['1_Workload']
-    df['3_Workload'] = df['workload'] + df['2_Workload']
+    # df['1_Workload'] = df['workload_x']
+    # df['2_Workload'] = df['workload_y'] + df['1_Workload']
+    # df['3_Workload'] = df['workload'] + df['2_Workload']
 
     df['1_cumul. SYNT use'] = [x.count('s') for x in df['tr_val_x']] # how many SYNTs: s, sub, subm
     df['1_cumul. SYNT use'] += [x.count('_m') for x in df['tr_val_x']] # plus how many MIXs: _m
@@ -141,7 +360,7 @@ def process_comb_cum_calcs(df: pd.DataFrame):
     df['3_cumul. GDA use'] = [x.count('gda') for x in df['tr_val']] # how many GDAs
     df['3_cumul. GDA use'] += df['2_cumul. GDA use']
 
-    df['Sworkload'] = df['3_Workload'] # sum
+    df['Sworkload'] = 0 # df['3_Workload'] # sum
 
     df['total no. unique DS'] = df['comb_key'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) # number of DSs
     df['1_cumul. no. unique DS'] = df['tr_val_x'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst))))
@@ -439,7 +658,7 @@ def plot_prod(g, x, y, h, t='', bs=None, xl='', min_max_labs=pd.DataFrame()):
                     verts = v.get_paths()[0].vertices
                     y_vals = verts[:, 1]
                     ymin, ymax = y_vals.min(), y_vals.max()
-                    x_center = mean(verts[:, 0])    
+                    x_center = np.mean(verts[:, 0])    
                     ax.text(x_center, ymin-mrg, f"{ymin:.3f}", ha="center", va="top")
                     ax.text(x_center, ymax+mrg, f"{ymax:.3f}", ha="center", va="bottom")
         # for ax in g.axes.flat:

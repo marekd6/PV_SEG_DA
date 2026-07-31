@@ -11,7 +11,7 @@ from desired_plots_tabs_atomics import *
 
 
 DIR = 'CSV/joint_ph_charts/res_dfs4'
-SAVEDIR = 'CSV/joint_ph_charts/selected3/f'
+DIR = 'joint_ph_charts/res_dfs4'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
@@ -140,11 +140,11 @@ def joint_plts_manual_agg_4D(df: pd.DataFrame, fl: str='joint'): # OK
     for h in HS_JOINT:
         plot_df_iou = df.groupby(by=[h, 'phase', 'test set'], as_index=False).agg(IoU=('IoU', 'mean')) # IoU by ph, set, key
         plot_df_walltime = df.groupby(by=[h, 'phase'], as_index=False).agg(Walltime=('Walltime', 'mean')) # Walltime by ph, key
-        plot_df_workload = df.groupby(by=[h, 'phase'], as_index=False).agg(Workload=('Workload', 'mean')) # Workload by ph, key
+        plot_df_workload = df.groupby(by=[h, 'phase'], as_index=False).agg(Workload=('Nworkload', 'mean')) # Workload by ph, key
         plot_df_walltime = pd.merge(left=plot_df_iou, right=plot_df_walltime, on=[h, 'phase'])
         plot_df_workload = pd.merge(left=plot_df_iou, right=plot_df_workload, on=[h, 'phase'])
         # print(plot_df_walltime.head())
-        repeat_plot(plot_df_walltime, f'{fl}_Walltime', 'Walltime', hs=[h], s=h, row=None, chs=['line'], ch_fu=rels, xl='[s]')
+        # repeat_plot(plot_df_walltime, f'{fl}_Walltime', 'Walltime', hs=[h], s=h, row=None, chs=['line'], ch_fu=rels, xl='[s]')
         # repeat_plot(plot_df_walltime, f'{fl}_Walltime', 'Walltime', hs=[h], s=h, row=None, chs=['line'], ch_fu=line, xl='[s]') # misleading CI per IoU only
         repeat_plot(plot_df_workload, f'{fl}_Workload', 'Workload', hs=[h], s=h, row=None, chs=['line'], ch_fu=rels)
         # repeat_plot(plot_df_workload, f'{fl}_Workload', 'Workload', hs=[h], s=h, row=None, chs=['line'], ch_fu=line) # misleading CI per IoU only
@@ -183,7 +183,7 @@ def joint_plts_no_agg_5D(df: pd.DataFrame, fl: str='joint'): # OK
 
 def ph1_plts_auto_agg_5D(df: pd.DataFrame, fl: str='ph1'): # OK
     '''x=h, y=IoU, col=set, h=HS_JOINT, row=phase; bar (viol, box)'''
-    repeat_plot(df, f'{fl}_phase', x='h', hs=HS_SNGL, row_ord=[1], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # x by h, xord by h
+    # repeat_plot(df, f'{fl}_phase', x='h', hs=HS_SNGL, row_ord=[1], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # x by h, xord by h
     repeat_plot(df, f'{fl}_phase', x='hh', hs=HS_SNGL, row_ord=[1], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # self-self x-h
     repeat_plot(df, f'{fl}_phase', hs=HS_SNGL, row_ord=[1], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # redundant but OK
     repeat_plot(df, f'{fl}_phase', row=None, hs=['phase'], bs=[0.71, 0.617, 0.359], chs=CH_BBV) # no h
@@ -209,11 +209,11 @@ def concats_5D(df: pd.DataFrame, fl: str): # next
 
 def all_joint123():
     ph123 = total_df_treatment(FILES['joint'], joint=True)
-    joint_plts_auto_agg_4D(ph123)
+    # joint_plts_auto_agg_4D(ph123)
     joint_plts_manual_agg_4D(ph123)
-    joint_plts_auto_agg_5D(ph123)
-    joint_plts_no_agg_4D(ph123)
-    joint_plts_no_agg_5D(ph123)
+    # joint_plts_auto_agg_5D(ph123)
+    # joint_plts_no_agg_4D(ph123)
+    # joint_plts_no_agg_5D(ph123)
 
 
 def all_concat(): # TODO treatment nie działa
@@ -222,21 +222,21 @@ def all_concat(): # TODO treatment nie działa
 
 def all_1st_phase():
     '''ph1: joit and sngl'''
-    ph1 = total_df_treatment(FILES['ph1'], sngl_ph_nr=1)
-    ph1_plts_auto_agg_5D(ph1)
-    ph1_plts_auto_agg_5D_v2(ph1)
+    # ph1 = total_df_treatment(FILES['ph1'], sngl_ph_nr=1)
+    # ph1_plts_auto_agg_5D(ph1)
+    # ph1_plts_auto_agg_5D_v2(ph1)
 
     ph123 = total_df_treatment(FILES['joint'], joint=True)
     print(ph123['ema'].count())
     ph1 = ph123[ph123['phase'] == 1]
-    # ph1_plts_auto_agg_5D(ph1, 'ph1_joint') # no
-    ph1_plts_auto_agg_5D_v2(ph1, 'ph1_joint')
+    ph1_plts_auto_agg_5D(ph1, 'ph1_joint') # no
+    # ph1_plts_auto_agg_5D_v2(ph1, 'ph1_joint')
 
 
 def main():
     all_joint123()
     # all_concat()
-    all_1st_phase()
+    # all_1st_phase()
 
 
 if __name__ == '__main__':

@@ -6,7 +6,6 @@ saving tabs & charts
 '''
 
 
-from os import makedirs
 from desired_plots_tabs_atomics import *
 
 
@@ -23,6 +22,7 @@ FILES = {
 
 HS_SNGL = ['train_val', 'SYNT use', 'DK use', 'GDA use']
 HS_JOINT = ['total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use']
+HS_JOINT.extend(['total SYNT use tr', 'total DK use tr', 'total GDA use tr'])
 HS_CUM = ['cumul. no. unique DS', 'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use']
 HS_ALL = HS_SNGL + HS_CUM + HS_JOINT
 

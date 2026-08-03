@@ -12,32 +12,27 @@ import pandas as pd
 # --------------------------------------------------------------------- #
 
 DS_SIZES_TR = {
-    's':   8614,
-    'sub': 8614,   # same underlying pool as 's', scaled later by sub_mult
+    's':   374,
+    'sub': 374,   # same underlying pool as 's', scaled later by sub_mult
     'dk':  324,
     'gda': 18,
 }
 DS_SIZES_VAL = {
-    's':     1846,
-    'sub':   1846,
+    's':     80,
+    'sub':   80,
     'dk':    160,
     'gda':   20,
     'gda_v': 2,     # small supplementary val set, only ever used via 'gda' unfolding in a 3-phase run
 }
 DS_W_MULT = {
-    's':   0.1,
-    'sub': 0.1,
+    's':   1/20,
+    'sub': 1/20,
     'gda': 1,
     'dk':  1,
 }
-
-# Nominal fraction used for the non-percentage synthetic subset flavors.
-# NOTE: this numeric value (100/12 %) can coincide with a plain percentage
-# subset - that's exactly why we must track the *flavor* (pct/mix/composite)
-# as a separate label rather than inferring it back from the fraction.
 S_SUB_S_FCT = {
-    'mix':       100 / 12,
-    'composite': 100 / 12,
+    'mix':       100,
+    'composite': 100,
 }
 
 
@@ -53,7 +48,8 @@ def compute_sub_mult_and_category(sub_col: pd.Series) -> tuple[pd.Series, pd.Ser
     sub_mult = sub_mult.fillna(100)       # no 'sub' at all -> full 100%
     sub_mult = sub_mult.astype(float) / 100
 
-    sub_cat = sub_col.where(sub_col.isin(['mix', 'composite']), other='pct')
+    # sub_cat = sub_col.where(sub_col.isin(['mix', 'composite']), other='pct')
+    sub_cat = pd.Series('pct', index=sub_col.index) # obtaining mix or comp - same effort as 100%
     return sub_mult, sub_cat
 
 
@@ -103,7 +99,8 @@ def _expand_side(code: str, side: str, sub_mult: float, sub_cat: str, is_ph3: bo
         if side == 'val' and is_ph3:
             # in a 3-phase pipeline, 'gda' on the val side denotes the
             # small supplementary gda_v hold-out, not the base gda val set
-            bump(('gda_v', None), DS_W_MULT['gda'] * DS_SIZES_VAL['gda_v'])
+            # bump(('gda_v', None), DS_W_MULT['gda'] * DS_SIZES_VAL['gda_v'])
+            bump(('gda', None), DS_W_MULT['gda'] * DS_SIZES_VAL['gda_v'])
         else:
             bump(('gda', None), DS_W_MULT['gda'] * sizes['gda'])
 

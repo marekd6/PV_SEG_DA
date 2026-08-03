@@ -12,12 +12,13 @@ import seaborn.objects as so
 import re
 import numpy as np
 from new_workload import expand_long
+from os import makedirs
 
 SAVING = True
 # SAVING = False
 
 SAVEDIR = 'CSV/joint_ph_charts/selected3/g'
-SAVEDIR = 'joint_ph_charts/selected3/h'
+SAVEDIR = 'joint_ph_charts/selected3/m'
 
 LMT = False
 
@@ -43,6 +44,7 @@ JOINT_COLS_BASES = SNGL_COLS_BASES + ['Walltime', 'Workload', 'cumul. SYNT use',
 
 SNGL_FIXED_COLS = ['entry_id']
 GLOB_FIXED_COLS = ['comb_key', 'trains', 'Sworkload', 'total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use', 
+                   'total SYNT use tr', 'total DK use tr', 'total GDA use tr',
              'DS_scores_sum', 'Sdom_raw', 'Sreal_raw', 'DS_score_tot_raw', 'DS_score_tot',
              'Sdom', 'Sreal', 'DS_score_raw', 'DS_score', 'ddiff'] + SNGL_FIXED_COLS
 
@@ -65,7 +67,8 @@ def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=Fals
     if round:
         df = round_sngl_ph(df, endecja)
     df = the_major_elongation(df, st, sngl_ph_nr)
-    df.to_csv(f'{SAVEDIR}/df_wide.csv')
+    makedirs(SAVEDIR)
+    df.to_csv(f'{SAVEDIR}/df_long.csv')
     df = df.rename(columns={'tr_val': 'train_val'})
     df = df.fillna({'ema': False}) # TODO map composite, mix to numerics 1/12 and cast to numerics, plot
     # print(df.count())
@@ -81,7 +84,7 @@ def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=Fals
     df = make_categorical(df, ['phase', 'ema', 'sub', 'comb_key', 'trains', 'train_val', 'cumul. no. unique DS',
                                'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use', 'loss', 'val', 'fn',
                                'total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use', 'train', 'src', 'test set'])
-    df.to_csv(f'{SAVEDIR}/df_fna.csv')
+    df.to_csv(f'{SAVEDIR}/df_long_fna.csv')
     print(df.columns)
     print(df.head())
     return df
@@ -372,8 +375,12 @@ def process_comb_cum_calcs(df: pd.DataFrame):
     df['total DK use'] = [x.count('dk') for x in df['comb_key']] # how many DKs: dk
     df['total DK use'] += [x.count('m') for x in df['comb_key']] # plus how many MIXs: m
     df['total GDA use'] = [x.count('gda') for x in df['comb_key']] # how many GDAs
-    # df['total SYNT use'] = [x.count('s') for x in df['trains']] # how many SYNTs in train only
-    # df['total GDA use'] = [x.count('gda') for x in df['trains']] # how many GDAs in train only
+    df['total SYNT use tr'] = [x.count('s') for x in df['trains']] # how many SYNTs in train only
+    df['total SYNT use tr'] += [x.count('_m') for x in df['trains']] # plus how many MIXs: _m
+    df['total DK use tr'] = [x.count('dk') for x in df['trains']] # how many DKs: dk
+    df['total DK use tr'] += [x.count('m') for x in df['trains']] # plus how many MIXs: m
+    df['total GDA use tr'] = [x.count('gda') for x in df['trains']] # how many GDAs in train only
+    # TODO tak, train/val only też
 
     df['DS_scores_sum'] = df['dist_x'] + df['dist_y'] + df['dist'] # sum of 1, 2, 3 scores
     # df['DS_scores_sum'] = df['DS_scores_sum'] / 3

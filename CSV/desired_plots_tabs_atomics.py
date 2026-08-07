@@ -18,7 +18,7 @@ SAVING = True
 # SAVING = False
 
 SAVEDIR = 'CSV/joint_ph_charts/selected3/g'
-SAVEDIR = 'joint_ph_charts/selected3/m'
+SAVEDIR = 'joint_ph_charts/selected3/s'
 
 LMT = False
 
@@ -39,7 +39,7 @@ HPARAM_COLS_BASE_REL = ['Runtime', 'workload']
 HPARAM_COLS_BASE = ['epochs', 'ID', 'epochs_done', 'epoch', 'Sweep', 'fn', ] + HPARAM_COLS_BASE_CAT + HPARAM_COLS_BASE_REL
 CALC_COLS_BASE = ['re_t', 'do_t', 're_v', 'real', 'w_v', 'w_t', 'dom', 'do_v', 'sub_mult', 'dist']
 
-SNGL_COLS_BASES = CALC_COLS_BASE + HPARAM_COLS_BASE + RAW_IOU_COLS
+SNGL_COLS_BASES = CALC_COLS_BASE + HPARAM_COLS_BASE + RAW_IOU_COLS + ['SYNT use', 'DK use', 'GDA use'] # TODO chk if breaks joint
 JOINT_COLS_BASES = SNGL_COLS_BASES + ['Walltime', 'Workload', 'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use', 'cumul. no. unique DS'] # the cums
 
 SNGL_FIXED_COLS = ['entry_id']
@@ -49,7 +49,7 @@ GLOB_FIXED_COLS = ['comb_key', 'trains', 'Sworkload', 'total no. unique DS', 'to
              'Sdom', 'Sreal', 'DS_score_raw', 'DS_score', 'ddiff'] + SNGL_FIXED_COLS
 
 
-def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=False, off=not LMT, endecja=0, sngl_ph_nr=3):
+def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=False, off=not LMT, endecja=0, sngl_ph_nr=3, cut_to_ph1=False):
     '''
     many operations, mainly col aggregations and df elongation
     '''
@@ -63,11 +63,10 @@ def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=Fals
         st = JOINT_COLS_BASES
     if not joint and not cnc:
         df = process_sngl_calcs(df)
-        st = SNGL_COLS_BASES + ['SYNT use', 'DK use', 'GDA use']
     if round:
         df = round_sngl_ph(df, endecja)
     df = the_major_elongation(df, st, sngl_ph_nr)
-    makedirs(SAVEDIR)
+    makedirs(SAVEDIR, exist_ok=True)
     df.to_csv(f'{SAVEDIR}/df_long.csv')
     df = df.rename(columns={'tr_val': 'train_val'})
     df = df.fillna({'ema': False}) # TODO map composite, mix to numerics 1/12 and cast to numerics, plot
@@ -79,8 +78,18 @@ def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=Fals
             df = expand_long(df, 'entry_id', 'phase')
             df = df.sort_values(by=['entry_id', 'phase', 'test set'])
             df[['Nworkload', 'workload_delta']] = df[['Nworkload', 'workload_delta']].bfill()
-            # df = df.rename(columns={'Nworkload': 'Workload'})
+            if 'Workload' in df.columns:
+                df = df.drop(columns=['Workload'])
+            df = df.rename(columns={'Nworkload': 'Workload', 'workload_delta': 'Workload increase'})
             # df = pd.merge(left=df, right=dfw, how='left', on=['entry_id', 'phase', 'test set'])
+    if not joint and not cnc and 'workload' in df.columns:
+        df = df.rename(columns={'workload': 'Workload'})
+    if cut_to_ph1:
+        print('cut_to_ph1')
+        print(df.columns)
+        # df = process_sngl_calcs(df)
+        df = df[df['phase'] == 1]
+        df = process_sngl_calcs(df, 'train_val')
     df = make_categorical(df, ['phase', 'ema', 'sub', 'comb_key', 'trains', 'train_val', 'cumul. no. unique DS',
                                'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use', 'loss', 'val', 'fn',
                                'total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use', 'train', 'src', 'test set'])
@@ -103,15 +112,19 @@ def make_categorical(df: pd.DataFrame, vars=['phase']):
     return df
 
 
-def process_sngl_calcs(df: pd.DataFrame):
+def process_sngl_calcs(df: pd.DataFrame, trv='tr_val'):
     '''
     sngl phase (local) aggregations
     '''
-    df['SYNT use'] = [x.count('s') for x in df['tr_val']] # how many SYNTs: s, sub, subm
-    df['SYNT use'] += [x.count('_m') for x in df['tr_val']] # plus how many MIXs: _m
-    df['DK use'] = [x.count('dk') for x in df['tr_val']] # how many DKs: dk
-    df['DK use'] += [x.count('m') for x in df['tr_val']] # plus how many MIXs: m
-    df['GDA use'] = [x.count('gda') for x in df['tr_val']] # how many GDAs
+    # trv = 'train_val' if 'train_val' in df.columns else 'tr_val_1'
+    print('trv', trv)
+    print(df[trv])
+    df['SYNT use'] = [x.count('s') for x in df[trv]] # how many SYNTs: s, sub, subm
+    df['SYNT use'] += [x.count('_m') for x in df[trv]] # plus how many MIXs: _m
+    df['DK use'] = [x.count('dk') for x in df[trv]] # how many DKs: dk
+    df['DK use'] += [x.count('m') for x in df[trv]] # plus how many MIXs: m
+    df['GDA use'] = [x.count('gda') for x in df[trv]] # how many GDAs
+    print(df['SYNT use'])
     return df
 
 
@@ -480,7 +493,15 @@ def the_major_elongation(df: pd.DataFrame, stubs=SNGL_COLS_BASES, sngl_ph_nr=Non
     print('done wide_to_long')
 
     hs = list(set(df.columns) - set(RAW_IOU_COLS))
+    if not SAVING:
+        print(hs)
+        for hc in hs:
+            if hc not in df.columns:
+                print(hc, 'is not in df')
+        print(df.columns)
+        print(df.dtypes)
     df = pd.melt(df, id_vars=hs, value_vars=RAW_IOU_COLS, var_name='phase_set', value_name='IoU')
+    print('done IoU melt')
     df['test set'] = df['phase_set'].str.split('_', n=2, expand=True)[1]
     df = df.drop(columns=['phase_set'])
     print(df.shape)
@@ -488,7 +509,7 @@ def the_major_elongation(df: pd.DataFrame, stubs=SNGL_COLS_BASES, sngl_ph_nr=Non
     return df
 
 
-def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None, xord=None):
+def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None, xord=None, dg='auto'):
     '''
     line/scatter
     '''
@@ -513,7 +534,7 @@ def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
     )
 
 
-def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='bar', size=None, xord=None):
+def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='bar', size=None, xord=None, dg='auto'):
     '''
     box/viol/bar/point/count/boxen/strip/swarm
     '''
@@ -549,6 +570,7 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         row_order=r_ord,
         palette=sns.color_palette(),
         order=xord,
+        dodge=dg,
     )
 
 def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
@@ -654,7 +676,7 @@ def plot_prod(g, x, y, h, t='', bs=None, xl='', min_max_labs=pd.DataFrame()):
     # if add_viol_labs:
     mrg = 0.003
     if not min_max_labs.empty:
-        if 'phase' in min_max_labs.columns:
+        if 'phase' in min_max_labs.columns and 'test set' in min_max_labs.columns:
             min_max_labs = min_max_labs.sort_values(by=['phase', 'test set'])
         if not SAVING:
             print(min_max_labs.head(7))

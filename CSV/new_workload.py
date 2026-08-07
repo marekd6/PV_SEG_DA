@@ -183,7 +183,7 @@ def expand_long(df: pd.DataFrame,
         t_contrib = _expand_side(t_code, 'train', sm, sc, ph3)
         v_contrib = _expand_side(v_code, 'val', sm, sc, ph3)
         row = {c: 0.0 for c in ALL_BUCKET_COLS}
-        for bucket, val in t_contrib.items():
+        for bucket, val in t_contrib.items(): # TODO put GDA in the same bucket
             row[_col('t', bucket)] = val
         for bucket, val in v_contrib.items():
             row[_col('v', bucket)] = val

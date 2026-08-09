@@ -11,14 +11,14 @@ import seaborn as sns
 import seaborn.objects as so
 import re
 import numpy as np
-from new_workload import expand_long
+from new_workload import add_workload
 from os import makedirs
 
 SAVING = True
 # SAVING = False
 
 SAVEDIR = 'CSV/joint_ph_charts/selected3/g'
-SAVEDIR = 'joint_ph_charts/selected3/s'
+SAVEDIR = 'joint_ph_charts/selected3/t'
 
 LMT = False
 
@@ -39,7 +39,7 @@ HPARAM_COLS_BASE_REL = ['Runtime', 'workload']
 HPARAM_COLS_BASE = ['epochs', 'ID', 'epochs_done', 'epoch', 'Sweep', 'fn', ] + HPARAM_COLS_BASE_CAT + HPARAM_COLS_BASE_REL
 CALC_COLS_BASE = ['re_t', 'do_t', 're_v', 'real', 'w_v', 'w_t', 'dom', 'do_v', 'sub_mult', 'dist']
 
-SNGL_COLS_BASES = CALC_COLS_BASE + HPARAM_COLS_BASE + RAW_IOU_COLS + ['SYNT use', 'DK use', 'GDA use'] # TODO chk if breaks joint
+SNGL_COLS_BASES = CALC_COLS_BASE + HPARAM_COLS_BASE + RAW_IOU_COLS + ['SYNT use', 'DK use', 'GDA use']
 JOINT_COLS_BASES = SNGL_COLS_BASES + ['Walltime', 'Workload', 'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use', 'cumul. no. unique DS'] # the cums
 
 SNGL_FIXED_COLS = ['entry_id']
@@ -67,33 +67,24 @@ def total_df_treatment(pth: str, limit=False, round=False, joint=False, cnc=Fals
         df = round_sngl_ph(df, endecja)
     df = the_major_elongation(df, st, sngl_ph_nr)
     makedirs(SAVEDIR, exist_ok=True)
-    df.to_csv(f'{SAVEDIR}/df_long.csv')
     df = df.rename(columns={'tr_val': 'train_val'})
     df = df.fillna({'ema': False}) # TODO map composite, mix to numerics 1/12 and cast to numerics, plot
-    # print(df.count())
     df.loc[(df['train'] == 's') & (df['sub'].isna()), 'sub'] = '100'
-    # print(df.count())
-    # print('prt cnt sub')
     if joint:
-            df = expand_long(df, 'entry_id', 'phase')
+            df = add_workload(df, 'entry_id', 'phase')
             df = df.sort_values(by=['entry_id', 'phase', 'test set'])
             df[['Nworkload', 'workload_delta']] = df[['Nworkload', 'workload_delta']].bfill()
             if 'Workload' in df.columns:
                 df = df.drop(columns=['Workload'])
             df = df.rename(columns={'Nworkload': 'Workload', 'workload_delta': 'Workload increase'})
-            # df = pd.merge(left=df, right=dfw, how='left', on=['entry_id', 'phase', 'test set'])
     if not joint and not cnc and 'workload' in df.columns:
         df = df.rename(columns={'workload': 'Workload'})
     if cut_to_ph1:
-        print('cut_to_ph1')
-        print(df.columns)
-        # df = process_sngl_calcs(df)
         df = df[df['phase'] == 1]
         df = process_sngl_calcs(df, 'train_val')
     df = make_categorical(df, ['phase', 'ema', 'sub', 'comb_key', 'trains', 'train_val', 'cumul. no. unique DS',
                                'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use', 'loss', 'val', 'fn',
                                'total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use', 'train', 'src', 'test set'])
-    df.to_csv(f'{SAVEDIR}/df_long_fna.csv')
     print(df.columns)
     print(df.head())
     return df
@@ -538,7 +529,13 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
     '''
     box/viol/bar/point/count/boxen/strip/swarm
     '''
+    if r is None and c is not None or df['phase'].nunique() == 1: # let violins fit
+            r, r_ord = c, c_ord
+            c, c_ord = None, None
     if ch == 'violin':
+        # if r is None and c is not None or df['phase'].nunique() == 1: # let violins fit
+        #     r, r_ord = c, c_ord
+        #     c, c_ord = None, None
         return sns.catplot(
             data=df,
             kind=ch,
@@ -555,7 +552,8 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
             cut=0,
             density_norm='count',
             order=xord,
-            aspect=1.8,
+            # aspect=1.8,
+            dodge=dg,
         )
     return sns.catplot(
         data=df,
@@ -647,12 +645,12 @@ def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
 #     return g
 
 
-def plot_prod(g, x, y, h, t='', bs=None, xl='', min_max_labs=pd.DataFrame()):
+def plot_prod(g, x, y, h, col, row, t='', bs=None, xl='', min_max_labs=pd.DataFrame()):
     '''
     labels, base lines
     '''
     if not SAVING:
-        print('plot prod', x, y, h, t, xl)
+        print('plot prod', x, y, h, col, row, t, xl)
     if bs:
         # g.set(ylim=(0.35, 0.85))
         for ax, b in zip(g.axes.flatten(), bs):
@@ -673,15 +671,16 @@ def plot_prod(g, x, y, h, t='', bs=None, xl='', min_max_labs=pd.DataFrame()):
     # g.set_titles("{col_name}")
     # g.set_axis_labels(x, y)
 
-    # if add_viol_labs:
     mrg = 0.003
-    if not min_max_labs.empty:
-        if 'phase' in min_max_labs.columns and 'test set' in min_max_labs.columns:
-            min_max_labs = min_max_labs.sort_values(by=['phase', 'test set'])
+    if not min_max_labs.empty: # TODO value from agg, loc from vert, cut=def
+        # if 'phase' in min_max_labs.columns and 'test set' in min_max_labs.columns:
+            # min_max_labs = min_max_labs.sort_values(by=['phase', 'test set'])
         if not SAVING:
-            print(min_max_labs.head(7))
-        for ax in g.axes.flat: # correct viol data via cut=0
+            print(min_max_labs.head(30))
+        for ax in g.axes.flat: # correct viol data via cut=0; THIS ONE WORKS
             violins = [c for c in ax.collections if isinstance(c, collections.PolyCollection)]
+            if not SAVING:
+                print(ax.get_title())
             for v in violins:
                 if len(v.get_paths()) > 0:
                     verts = v.get_paths()[0].vertices
@@ -690,43 +689,52 @@ def plot_prod(g, x, y, h, t='', bs=None, xl='', min_max_labs=pd.DataFrame()):
                     x_center = np.mean(verts[:, 0])    
                     ax.text(x_center, ymin-mrg, f"{ymin:.3f}", ha="center", va="top")
                     ax.text(x_center, ymax+mrg, f"{ymax:.3f}", ha="center", va="bottom")
-        # for ax in g.axes.flat:
+        # i_base = 0
+        # for ax in g.axes.flat: # the correct way to put df values onto the plot if test set present
+        #     mml = min_max_labs.copy()
+        #     # print(mml.dtypes)
+        #     axt = ax.get_title()
+        #     fj = True
+        #     if '|' in axt:
+        #         axt = axt.split('|')
+        #         phh = axt[0].split(' = ')[1].strip()
+        #         mml = mml[mml['phase'] == int(phh)]
+        #         print('phase', f'*{phh}*', mml.size, mml.empty)
+        #         axt = axt[1]
+        #         fj = False
+        #     ts = axt.split(' = ')[1]
+        #     if ts == 'DK' and fj:
+        #         ts = 'SYNT'
+        #     elif ts == 'SYNT' and fj:
+        #         ts = 'DK'
+        #     print(ax.get_title(), i_base, ts, 'g')
+        #     mml = mml[mml['test set'] == ts]
+        #     print(mml.head(10))
+        #     # print(axes.Axes().name)
+        #     print(ax.get_title(), ax.title, ax.get_label(), ax.name)
         #     violins = [c for c in ax.collections if isinstance(c, collections.PolyCollection)]
-        #     for v, mi, ma in zip(violins, min_max_labs['min'], min_max_labs['max']):
+        #     j = 0
+        #     print('i_base', i_base, 'j', j)
+        #     for i, v in enumerate(violins):
+        #         print(v.get_label())
+        #         print(v.axes.title, v.axes.name)
         #         if len(v.get_paths()) > 0:
         #             verts = v.get_paths()[0].vertices
         #             y_vals = verts[:, 1]
-        #             ymin, ymax = mi, ma
-        #             x_center = mean(verts[:, 0])    
-        #             ax.text(x_center, ymin-mrg, f"{ymin:.3f}", ha="center", va="top")
-        #             ax.text(x_center, ymax+mrg, f"{ymax:.3f}", ha="center", va="bottom")
-        # for ax in g.axes.flat:
-        #     facet_name = ax.get_title().split('|') # ['phase = 1 ', ' test set = DK']
-        #     print(facet_name)
-        #     if len(facet_name) > 1:
-        #         ph = facet_name[0].strip().split(' = ')[1]
-        #         tst = facet_name[1].strip().split(' = ')[1]
-        #         print(ph, tst)
-        #         row = min_max_labs[min_max_labs['test set'] == tst]
-        #         print(row)
-        #         row = row[row[x] == int(ph)]
-        #         print(row)
-        #     else:
-        #         tst = facet_name[0].strip().split(' =')[1]
-        #         row = min_max_labs[min_max_labs['test set'] == tst]
-        #     # row = min_max_labs[min_max_labs['test set'] == facet_name].iloc[0]
-        #     violins = [c for c in ax.collections if isinstance(c, collections.PolyCollection)]
-        #     for i, v in enumerate(violins):
-        #         if len(v.get_paths()) > 0:
-        #             verts = v.get_paths()[0].vertices
-        #             ymin = row['min'].iloc[i]
-        #             ymax = row['max'].iloc[i]
-        #             print(ymin, ymax)
-                    
-        #             # x-position of the violin center
-        #             x_center = mean(verts[:, 0])
-                    
-        #             ax.text(x_center, ymin, f"{ymin:.3f}", ha="center", va="top")
-        #             ax.text(x_center, ymax, f"{ymax:.3f}", ha="center", va="bottom")
-        #             # axes.Axes().text()
+        #             ymin, ymax = y_vals.min(), y_vals.max()
+        #             yminf, ymaxf = f"{ymin:.3f}", f"{ymax:.3f}"
+        #             yminfo, ymaxfo = f"{mml.iat[j, 3]:.3f}", f"{mml.iat[j, 7]:.3f}"
+        #             # yminfo, ymaxfo = f"{min_max_labs.iat[j+i_base, 3]:.3f}", f"{ min_max_labs.iat[j+i_base, 7]:.3f}"
+        #             # yminfo, ymaxfo = f"{min_max_labs['min'].iloc[i+i_base]:.3f}", f"{ min_max_labs['max'].iloc[i+i_base]:.3f}"
+        #             if ymaxf != ymaxfo:
+        #                 print(i, ymaxf, ymaxfo)
+        #             if yminf != yminfo:
+        #                 print(i, yminf, yminfo)
+        #             x_center = np.mean(verts[:, 0])
+        #             ax.text(x_center, ymin-mrg, yminfo, ha="center", va="top")
+        #             ax.text(x_center, ymax+mrg, ymaxfo, ha="center", va="bottom")
+        #             # ax.text(x_center, ymin-mrg, yminf, ha="center", va="top")
+        #             # ax.text(x_center, ymax+mrg, ymaxf, ha="center", va="bottom")
+        #             j += 1
+        #     i_base += j
     return g

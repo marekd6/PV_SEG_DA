@@ -151,7 +151,7 @@ def dedupe_phase_rows(df: pd.DataFrame,
     return df.drop_duplicates(subset=[run_col, phase_col]).reset_index(drop=True)
 
 
-def expand_long(df: pd.DataFrame,
+def add_workload(df: pd.DataFrame,
                  run_col: str = 'run_id',
                  phase_col: str = 'phase_num',
                  train_col: str = 'train',

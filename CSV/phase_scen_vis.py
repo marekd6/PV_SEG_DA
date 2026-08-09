@@ -5,8 +5,8 @@ from matplotlib.patches import Patch
 
 from desired_plots_tabs_top_lvl import *
 
-TRAIN_WIDTHS = {"SYNT": 20, "DK": 12, "GDA": 8}
-VAL_WIDTHS = {"SYNT": 12, "DK": 7, "GDA": 5}
+TRAIN_WIDTHS = {"SYNT": 40, "DK": 5, "GDA": 3}
+VAL_WIDTHS = {"SYNT": 10, "DK": 3, "GDA": 2}
 
 MIX_CODE = {"train": "subm", "val": "m"}
 SYNTH_ONLY_CODES = {"s", "sub"}
@@ -74,7 +74,7 @@ def transform(raw_df):
 
         # pivot the 3 test_set/iou rows into one wide row for the table
         row = {"run": entry_id, "phase": phase, 'bs': first['batch_size'], 'epochs': first['epochs'],
-               'lr enc': first['lrenc'], 'lr dec': first['lrdec'], 'wd': first['wd']}
+               'lr enc': first['lrenc'], 'lr dec': first['lrdec'], 'wd': first['wd'], 'Workload': first['Workload'], 'Runtime': first['Runtime']}
         for _, r in group.iterrows():
             if r['test set'] == 'GDA' or True:
                 row[r["test set"]] = r["IoU"]
@@ -98,11 +98,14 @@ def get_table_rows(table_df, run, phase):
     hparam_ks, hparam_vs = [], []
     metric_ks, metric_vs = [], []
     for k, v in zip(param_cols, tv):
-        if k in ['DK', 'GDA', 'SYNT']:
+        if k in ['DK', 'GDA', 'SYNT'] + ['Runtime', 'Workload']:
             # kk = 'SYNTHETIC' if k == 'SYNT' else k
             kk = k
             metric_ks.append(kk)
-            metric_vs.append(f"{v:.3f}")
+            if kk == 'Runtime':
+                metric_vs.append(f"{v:.0f}")
+            else:
+                metric_vs.append(f"{v:.3f}")
         else:
             vv = f'{v:.0e}' if ('lr' in k or k == 'wd') else f'{v:.0f}'
             hparam_ks.append(k)
@@ -118,10 +121,9 @@ TABLE_COL_RATIO = 5.2
 
 BAR_ROW_ORDER = ["Val", "Train"]  # bottom-to-top; Train ends up drawn above Val
 
-def draw_phase_block(fig, outer_gs, row_idx, phase_idx, run, phase, bar_df, table_df,
+def draw_phase_block(fig, phase_cell, run, phase, bar_df, table_df,
                       label_min_width=3, bar_thickness=0.6, row_pad=0.5,
                       table_hspace=0.15):
-    phase_cell = outer_gs[row_idx, 1 + phase_idx]
     inner_gs = gridspec.GridSpecFromSubplotSpec(
         1, 2, subplot_spec=phase_cell,
         width_ratios=[BAR_COL_RATIO, TABLE_COL_RATIO],
@@ -173,7 +175,10 @@ def draw_phase_block(fig, outer_gs, row_idx, phase_idx, run, phase, bar_df, tabl
 # spacing BETWEEN phases - kept larger than the inner train/val/table
 # spacing (INNER_WSPACE, set inside draw_phase_block) so phases read as
 # visually distinct groups
-OUTER_WSPACE = 0.45
+OUTER_WSPACE = 0.2
+# spacing between the label column and the first phase - independent of
+# OUTER_WSPACE since it's controlled on a separate, outer GridSpec
+LABEL_WSPACE = 0.05
 
 def _fmt_group_val(v):
     try:
@@ -203,7 +208,7 @@ def extract_full_entries(df: pd.DataFrame, level: str = 'total SYNT use'):
     return result.sort_values([level, 'entry_id', 'phase']).reset_index(drop=True)
 
 
-def build_phase_scenario_grid(group_var='total SYNT use', top_n=4,
+def build_phase_scenario_grid(group_var='total SYNT use',
                                entry_col='entry_id', title=None,
                                save_name='top_scens_by_synth.png'):
     """
@@ -213,24 +218,12 @@ def build_phase_scenario_grid(group_var='total SYNT use', top_n=4,
     First column shows, per row, "<group_var value> (<entry_id>)", with
     `group_var` itself as the column header.
     """
-    cols = HPARAM_COLS_BASE_CAT + ['IoU', 'phase', 'test set', entry_col, group_var, 'epochs']
+    cols = HPARAM_COLS_BASE_CAT + ['IoU', 'phase', 'test set', entry_col, group_var, 'epochs'] + ['Runtime', 'Workload']
     ph = total_df_treatment(FILES['joint'], joint=True)
     cols = list(set(cols) & set(ph.columns))
+    print(cols, 'cols')
     ph = ph[cols]
     ph = extract_full_entries(ph, group_var)
-
-    # ph = ph.groupby(by=[group_var]).first()
-
-    # # one row per entry, to rank entries by group_var (assumed constant within an entry)
-    # entry_rank = (ph[[entry_col, group_var]]
-    #                 .drop_duplicates(subset=entry_col)
-    #                 .sort_values(group_var, ascending=False)
-    #                 .head(top_n))
-    # top_entries = entry_rank[entry_col].tolist()
-    # group_val_by_entry = dict(zip(entry_rank[entry_col], entry_rank[group_var]))
-
-    # ph = ph[ph[entry_col].isin(top_entries)]
-    # ph = ph.sort_values(by=[group_var, 'phase'], ascending=[False, True])
 
     if not SAVING:
         print(ph)
@@ -244,36 +237,49 @@ def build_phase_scenario_grid(group_var='total SYNT use', top_n=4,
     records = bar_df["run"].unique().tolist()
     phases = bar_df["phase"].unique().tolist()
     row_labels = {run: f"{_fmt_group_val(ph[ph[entry_col] == run][group_var].iloc[0])} ({run})" for run in records}
-    # row_labels = {run: f"{_fmt_group_val(group_val_by_entry[run])} ({run})" for run in records}
 
     n_records, n_phases = len(records), len(phases)
     fig = plt.figure(figsize=(11.7, 8.3))
-    outer_gs = gridspec.GridSpec(
-        n_records + 1, 1 + n_phases,
-        width_ratios=[0.1] + [1] * n_phases,   # first column narrowed (was 0.15)
+    # root: 2 columns (label | phases-block), spacing between them controlled
+    # independently from the spacing BETWEEN phases (set below, on phases_gs)
+    root_gs = gridspec.GridSpec(
+        n_records + 1, 2,
+        width_ratios=[0.1, n_phases],   # label column narrow, phases block wide
         height_ratios=[0.15] + [1] * n_records,
         hspace=0.25,
-        wspace=OUTER_WSPACE,
+        wspace=LABEL_WSPACE,
         left=0.01, right=0.98,
         top=0.95, bottom=0.08,
     )
+    # nested: phases-block column split into n_phases columns - same row
+    # structure (height_ratios/hspace) as root_gs so rows line up with the
+    # label column, but its OWN wspace between phases
+    phases_gs = gridspec.GridSpecFromSubplotSpec(
+        n_records + 1, n_phases, subplot_spec=root_gs[:, 1],
+        width_ratios=[1] * n_phases,
+        height_ratios=[0.15] + [1] * n_records,
+        hspace=0.25,
+        wspace=OUTER_WSPACE,
+    )
 
     # first-column header names what the row values below represent
-    ax_col_label = fig.add_subplot(outer_gs[0, 0]); ax_col_label.axis("off")
-    ax_col_label.text(0.5, 0.2, group_var, fontweight="bold", fontsize=7,
-                       ha="center", va="center", rotation=90)
+    ax_col_label = fig.add_subplot(root_gs[0, 0]); ax_col_label.axis("off")
+    ax_col_label.text(0.9, 0.9, group_var, fontweight="bold", fontsize=7,
+                       ha="center", va="center") # , rotation=90)
+    ax_col_label.text(0.9, 0.2, '(run)', fontweight="bold", fontsize=7,
+                       ha="center", va="center") # , rotation=90)
 
     for p, phase in enumerate(phases):
-        ax = fig.add_subplot(outer_gs[0, 1 + p]); ax.axis("off")
+        ax = fig.add_subplot(phases_gs[0, p]); ax.axis("off")
         ax.text(0.5, 0.2, f'phase = {phase}', fontweight="bold", ha="center", va="center")
 
     for r, run in enumerate(records):
         row_idx = r + 1
-        ax_label = fig.add_subplot(outer_gs[row_idx, 0]); ax_label.axis("off")
+        ax_label = fig.add_subplot(root_gs[row_idx, 0]); ax_label.axis("off")
         ax_label.text(0.5, 0.5, row_labels[run], fontweight="bold", fontsize=8,
                       ha="center", va="center", rotation=90)
         for p, phase in enumerate(phases):
-            draw_phase_block(fig, outer_gs, row_idx, p, run, phase, bar_df, table_df)
+            draw_phase_block(fig, phases_gs[row_idx, p], run, phase, bar_df, table_df)
 
     legend_handles = [Patch(facecolor=c, label=cat) for cat, c in category_colors.items()]
     fig.legend(handles=legend_handles, loc="lower center", ncol=len(category_colors),

@@ -82,63 +82,63 @@ def transform(raw_df):
 
     return pd.DataFrame(bar_rows), pd.DataFrame(table_rows)
 
-cols = HPARAM_COLS_BASE_CAT + ['IoU', 'phase', 'test set', 'entry_id', 'total SYNT use', 'epochs']
-ph123 = total_df_treatment(FILES['joint'], joint=True)
-cols = list(set(cols) & set(ph123.columns))
-ph123 = ph123[cols]
-ph123 = ph123.sort_values(by=['entry_id', 'phase'])
-ph123 = ph123[ph123['entry_id'].isin([915, 913, 396, 492])]
-ph123 = ph123.sort_values(by=['total SYNT use', 'phase'])
-if not SAVING:
-    print(ph123)
-
-bar_df, table_df = transform(ph123)
-if not SAVING:
-    print(bar_df)
-    print(table_df)
-    print(table_df.dtypes)
-
 category_colors = {"DK": "#4C72B0", "GDA": "#DD8452", "Synthetic": "#55A868"}
-records = bar_df["run"].unique().tolist()
-phases = bar_df["phase"].unique().tolist()
 
-def get_segments(run, phase, bar_name):
+def get_segments(bar_df, run, phase, bar_name):
     sub = bar_df[(bar_df.run == run) & (bar_df.phase == phase) & (bar_df.bar_name == bar_name)]
     return list(sub.sort_values("start")[["start", "width", "category", 'label']].itertuples(index=False, name=None))
 
-def get_table_row(run, phase):
+def get_table_rows(table_df, run, phase):
+    """Split the run's params into two (cols, values) tuples: hyperparameters
+    and metrics (test-set IoUs), so they can be rendered as two stacked
+    header-row tables instead of one."""
     sub = table_df[(table_df.run == run) & (table_df.phase == phase)]
     param_cols = [c for c in table_df.columns if c not in ("run", "phase")]
     tv = sub[param_cols].values[0]
-    ks, vs = [], []
+    hparam_ks, hparam_vs = [], []
+    metric_ks, metric_vs = [], []
     for k, v in zip(param_cols, tv):
-        kk, vv = k, v
-        if 'lr' in k or k == 'wd':
-            vv = f'{v:.0e}'
-        else:
-            vv = f'{v:.0f}'
         if k in ['DK', 'GDA', 'SYNT']:
-            kk = k
-            if k == 'SYNT':
-                kk = 'SYNTHETIC'
-            # kk = 'IoU' + ' ' + kk
-            vv = f"{v:.3f}"
-        ks.append(kk)
-        vs.append(vv)
-    return [vs], ks
+            kk = 'SYNTHETIC' if k == 'SYNT' else k
+            metric_ks.append(kk)
+            metric_vs.append(f"{v:.3f}")
+        else:
+            vv = f'{v:.0e}' if ('lr' in k or k == 'wd') else f'{v:.0f}'
+            hparam_ks.append(k)
+            hparam_vs.append(vv)
+    return (hparam_ks, [hparam_vs]), (metric_ks, [metric_vs])
 
-def draw_phase_block(fig, gs, row_idx, col_start, run, phase, label_min_width=3, bar_height=2):
+# bar/table split WITHIN a phase - kept tight, distinct from the larger
+# gap BETWEEN phases (set on the outer GridSpec, see below)
+INNER_WSPACE = 0.12
+BAR_COL_RATIO = 0.55
+TABLE_COL_RATIO = 5.2
+
+
+def draw_phase_block(fig, outer_gs, row_idx, phase_idx, run, phase, bar_df, table_df,
+                      label_min_width=3, bar_thickness=1.0, bar_ax_height=2.4,
+                      table_hspace=0.15):
+    phase_cell = outer_gs[row_idx, 1 + phase_idx]
+    inner_gs = gridspec.GridSpecFromSubplotSpec(
+        1, 3, subplot_spec=phase_cell,
+        width_ratios=[BAR_COL_RATIO, BAR_COL_RATIO, TABLE_COL_RATIO],
+        wspace=INNER_WSPACE,
+    )
+
     for b, bar_name in enumerate(["Train", "Val"]):
-        ax = fig.add_subplot(gs[row_idx, col_start + b])
+        ax = fig.add_subplot(inner_gs[0, b])
         bar_width = 0
-        for start, width, category, label in get_segments(run, phase, bar_name):
+        # center a thinner bar within a taller axis -> bar no longer fills
+        # the full row height, leaving padding above/below
+        y0 = (bar_ax_height - bar_thickness) / 2
+        for start, width, category, label in get_segments(bar_df, run, phase, bar_name):
             bar_width += width
-            ax.broken_barh([(start, width)], (0, bar_height),
+            ax.broken_barh([(start, width)], (y0, bar_thickness),
                            facecolors=category_colors[category], edgecolor="white")
-            if width > label_min_width:
-                ax.text(start + width / 2, bar_height / 2, label,
+            if label and width > label_min_width:
+                ax.text(start + width / 2, y0 + bar_thickness / 2, label,
                         ha="center", va="center", fontsize=8, color="white")
-        ax.set_ylim(0, bar_height)
+        ax.set_ylim(0, bar_ax_height)
         ax.set_yticks([])
         ax.set_yticklabels('')
         ax.set_xticks([bar_width / 2])
@@ -146,46 +146,141 @@ def draw_phase_block(fig, gs, row_idx, col_start, run, phase, label_min_width=3,
         for s in ["top", "right", "bottom", "left"]: ax.spines[s].set_visible(False)
         ax.tick_params(left=False)
 
-    ax_table = fig.add_subplot(gs[row_idx, col_start + 2])
-    ax_table.axis("off")
-    row_values, param_cols = get_table_row(run, phase)
-    print(row_values, param_cols)
-    table = ax_table.table(cellText=row_values, colLabels=param_cols, loc="center", cellLoc="center")
-    table.auto_set_font_size(False); table.set_fontsize(8); table.scale(1, 1.6)
+    # two header-row tables stacked vertically in the third cell, each
+    # sized to exactly half the cell (bbox=[0,0,1,1] forces a fit rather
+    # than letting table.scale() overflow the allotted height)
+    table_gs = gridspec.GridSpecFromSubplotSpec(
+        2, 1, subplot_spec=inner_gs[0, 2], hspace=table_hspace,
+    )
+    ax_hparams = fig.add_subplot(table_gs[0, 0]); ax_hparams.axis("off")
+    ax_metrics = fig.add_subplot(table_gs[1, 0]); ax_metrics.axis("off")
 
-n_records, n_phases = len(records), len(phases)
-fig = plt.figure(figsize=(11.7, 8.3))
-gs = gridspec.GridSpec(
-    n_records + 1, 1 + n_phases * 3,
-    width_ratios=[0.15] + [1, 1, 5.5] * n_phases,
-    height_ratios=[0.15] + [1] * n_records,
-    hspace=0.25, 
-    # wspace=0.5,
-    left=0.01, right=0.98,
-    top=0.95, bottom=0.08,
-)
+    (hparam_cols, hparam_vals), (metric_cols, metric_vals) = get_table_rows(table_df, run, phase)
 
-for p, phase in enumerate(phases):
-    col_start = 1 + p * 3
-    ax = fig.add_subplot(gs[0, col_start:col_start + 3]); ax.axis("off")
-    ax.text(0.5, 0.2, f'phase = {phase}', fontweight="bold", ha="center", va="center") # fontsize=13, 
+    t1 = ax_hparams.table(cellText=hparam_vals, colLabels=hparam_cols,
+                           loc="center", cellLoc="center", bbox=[0, 0, 1, 1])
+    t1.auto_set_font_size(False); t1.set_fontsize(8)
 
-run_to_s_lvl = {915: 1, 913: 2, 396: 3, 492: 4}
+    t2 = ax_metrics.table(cellText=metric_vals, colLabels=metric_cols,
+                           loc="center", cellLoc="center", bbox=[0, 0, 1, 1])
+    t2.auto_set_font_size(False); t2.set_fontsize(8)
 
-for r, run in enumerate(records):
-    row_idx = r + 1
-    ax_label = fig.add_subplot(gs[row_idx, 0]); ax_label.axis("off")
-    ax_label.text(0.5, 0.5, run_to_s_lvl[run], fontweight="bold", # r+1
-                  ha="center", va="center", rotation=90) # fontsize=11, 
+# spacing BETWEEN phases - kept larger than the inner train/val/table
+# spacing (INNER_WSPACE, set inside draw_phase_block) so phases read as
+# visually distinct groups
+OUTER_WSPACE = 0.45
+
+def _fmt_group_val(v):
+    try:
+        return f"{float(v):g}"
+    except (TypeError, ValueError):
+        return str(v)
+
+
+def extract_full_entries(df: pd.DataFrame, level: str = 'total SYNT use'):
+    """
+    For each level, find the entry_id whose phase=3 and test_set='g' row
+    has the highest metric, then return ALL rows (all phases) belonging
+    to that entry_id.
+    """
+
+    # Step 1: filter to the decisive slice
+    filtered = df[(df['phase'] == 3) & (df['test set'] == 'GDA')] # TODO or among all phases - v. interseting
+
+    # Step 2: find the best entry_id per level
+    idx = filtered.groupby(level)['IoU'].idxmax()
+    winners = filtered.loc[idx, [level, 'entry_id']]
+
+    # Step 3: join back to original df to get full long-format entries
+    result = df.merge(winners, on=[level, 'entry_id'], how='inner')
+
+    # Optional: sort nicely
+    return result.sort_values([level, 'entry_id', 'phase']).reset_index(drop=True)
+
+
+def build_phase_scenario_grid(group_var='total SYNT use', top_n=4,
+                               entry_col='entry_id', title=None,
+                               save_name='top_scens_by_synth.png'):
+    """
+    Rank distinct entries by `group_var` (descending) and render the
+    phase x (train/val/tables) grid for the top `top_n` of them.
+
+    First column shows, per row, "<group_var value> (<entry_id>)", with
+    `group_var` itself as the column header.
+    """
+    cols = HPARAM_COLS_BASE_CAT + ['IoU', 'phase', 'test set', entry_col, group_var, 'epochs']
+    ph = total_df_treatment(FILES['joint'], joint=True)
+    cols = list(set(cols) & set(ph.columns))
+    ph = ph[cols]
+    ph = extract_full_entries(ph, group_var)
+
+    # ph = ph.groupby(by=[group_var]).first()
+
+    # # one row per entry, to rank entries by group_var (assumed constant within an entry)
+    # entry_rank = (ph[[entry_col, group_var]]
+    #                 .drop_duplicates(subset=entry_col)
+    #                 .sort_values(group_var, ascending=False)
+    #                 .head(top_n))
+    # top_entries = entry_rank[entry_col].tolist()
+    # group_val_by_entry = dict(zip(entry_rank[entry_col], entry_rank[group_var]))
+
+    # ph = ph[ph[entry_col].isin(top_entries)]
+    # ph = ph.sort_values(by=[group_var, 'phase'], ascending=[False, True])
+
+    if not SAVING:
+        print(ph)
+
+    bar_df, table_df = transform(ph)
+    if not SAVING:
+        print(bar_df)
+        print(table_df)
+        print(table_df.dtypes)
+
+    records = bar_df["run"].unique().tolist()
+    phases = bar_df["phase"].unique().tolist()
+    row_labels = {run: f"{_fmt_group_val(ph[ph[entry_col] == run][group_var].iloc[0])} ({run})" for run in records}
+    # row_labels = {run: f"{_fmt_group_val(group_val_by_entry[run])} ({run})" for run in records}
+
+    n_records, n_phases = len(records), len(phases)
+    fig = plt.figure(figsize=(11.7, 8.3))
+    outer_gs = gridspec.GridSpec(
+        n_records + 1, 1 + n_phases,
+        width_ratios=[0.1] + [1] * n_phases,   # first column narrowed (was 0.15)
+        height_ratios=[0.15] + [1] * n_records,
+        hspace=0.25,
+        wspace=OUTER_WSPACE,
+        left=0.01, right=0.98,
+        top=0.95, bottom=0.08,
+    )
+
+    # first-column header names what the row values below represent
+    ax_col_label = fig.add_subplot(outer_gs[0, 0]); ax_col_label.axis("off")
+    ax_col_label.text(0.5, 0.2, group_var, fontweight="bold", fontsize=7,
+                       ha="center", va="center") # , rotation=90
+
     for p, phase in enumerate(phases):
-        draw_phase_block(fig, gs, row_idx, 1 + p * 3, run, phase)
+        ax = fig.add_subplot(outer_gs[0, 1 + p]); ax.axis("off")
+        ax.text(0.5, 0.2, f'phase = {phase}', fontweight="bold", ha="center", va="center")
 
-legend_handles = [Patch(facecolor=c, label=cat) for cat, c in category_colors.items()]
-fig.legend(handles=legend_handles, loc="lower center", ncol=len(category_colors),
-           frameon=False, fontsize=10)
-fig.suptitle('Top scenarios by Synthetic use level')
-if SAVING:
-    fig.savefig(f'{SAVEDIR}/top_scens_by_synth.png')
-    plt.close()
-else:
-    plt.show()
+    for r, run in enumerate(records):
+        row_idx = r + 1
+        ax_label = fig.add_subplot(outer_gs[row_idx, 0]); ax_label.axis("off")
+        ax_label.text(0.5, 0.5, row_labels[run], fontweight="bold", fontsize=8,
+                      ha="center", va="center", rotation=90)
+        for p, phase in enumerate(phases):
+            draw_phase_block(fig, outer_gs, row_idx, p, run, phase, bar_df, table_df)
+
+    legend_handles = [Patch(facecolor=c, label=cat) for cat, c in category_colors.items()]
+    fig.legend(handles=legend_handles, loc="lower center", ncol=len(category_colors),
+               frameon=False, fontsize=10)
+    fig.suptitle(title or f'Top scenarios by {group_var}')
+
+    if SAVING:
+        fig.savefig(f'{SAVEDIR}/{save_name}')
+        plt.close(fig)
+    else:
+        plt.show()
+    return fig
+
+
+build_phase_scenario_grid()

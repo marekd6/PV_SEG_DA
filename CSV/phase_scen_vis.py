@@ -5,24 +5,24 @@ from matplotlib.patches import Patch
 
 from desired_plots_tabs_top_lvl import *
 
-TRAIN_WIDTHS = {"Synthetic": 20, "DK": 12, "GDA": 8}
-VAL_WIDTHS = {"Synthetic": 12, "DK": 7, "GDA": 5}
+TRAIN_WIDTHS = {"SYNT": 20, "DK": 12, "GDA": 8}
+VAL_WIDTHS = {"SYNT": 12, "DK": 7, "GDA": 5}
 
 MIX_CODE = {"train": "subm", "val": "m"}
 SYNTH_ONLY_CODES = {"s", "sub"}
 # maps every known single-category code -> display category, for both train and val
-CODE_TO_CATEGORY = {"s": "Synthetic", "sub": "Synthetic", "dk": "DK", "gda": "GDA"}
+CODE_TO_CATEGORY = {"s": "SYNT", "sub": "SYNT", "dk": "DK", "gda": "GDA"}
 
 
 def _train_segments(train_code, sub_value):
     """Return [(category, width, label_or_None), ...] for the train bar."""
     if train_code == MIX_CODE["train"]:
         return [
-            ("Synthetic", TRAIN_WIDTHS["Synthetic"], str(sub_value)),
+            ("SYNT", TRAIN_WIDTHS["SYNT"], str(sub_value)),
             ("DK", TRAIN_WIDTHS["DK"], None),
         ]
     if train_code in SYNTH_ONLY_CODES:
-        return [("Synthetic", TRAIN_WIDTHS["Synthetic"], str(sub_value))]
+        return [("SYNT", TRAIN_WIDTHS["SYNT"], str(sub_value))]
     # pass-through single category (e.g. 'dk', 'gda') -- no label, 'sub' doesn't apply
     category = CODE_TO_CATEGORY.get(train_code, train_code.upper())
     return [(category, TRAIN_WIDTHS.get(category, 10), None)]
@@ -32,7 +32,7 @@ def _val_segments(val_code):
     """Return [(category, width, label_or_None), ...] for the val bar. No labels on val."""
     if val_code == MIX_CODE["val"]:
         return [
-            ("Synthetic", VAL_WIDTHS["Synthetic"], None),
+            ("SYNT", VAL_WIDTHS["SYNT"], None),
             ("DK", VAL_WIDTHS["DK"], None),
         ]
     category = CODE_TO_CATEGORY.get(val_code, val_code.upper())
@@ -76,13 +76,13 @@ def transform(raw_df):
         row = {"run": entry_id, "phase": phase, 'bs': first['batch_size'], 'epochs': first['epochs'],
                'lr enc': first['lrenc'], 'lr dec': first['lrdec'], 'wd': first['wd']}
         for _, r in group.iterrows():
-            if r['test set'] == 'GDA':
+            if r['test set'] == 'GDA' or True:
                 row[r["test set"]] = r["IoU"]
         table_rows.append(row)
 
     return pd.DataFrame(bar_rows), pd.DataFrame(table_rows)
 
-category_colors = {"DK": "#4C72B0", "GDA": "#DD8452", "Synthetic": "#55A868"}
+category_colors = {"DK": "#4C72B0", "GDA": "#DD8452", "SYNT": "#55A868"}
 
 def get_segments(bar_df, run, phase, bar_name):
     sub = bar_df[(bar_df.run == run) & (bar_df.phase == phase) & (bar_df.bar_name == bar_name)]
@@ -99,7 +99,8 @@ def get_table_rows(table_df, run, phase):
     metric_ks, metric_vs = [], []
     for k, v in zip(param_cols, tv):
         if k in ['DK', 'GDA', 'SYNT']:
-            kk = 'SYNTHETIC' if k == 'SYNT' else k
+            # kk = 'SYNTHETIC' if k == 'SYNT' else k
+            kk = k
             metric_ks.append(kk)
             metric_vs.append(f"{v:.3f}")
         else:
@@ -111,46 +112,50 @@ def get_table_rows(table_df, run, phase):
 # bar/table split WITHIN a phase - kept tight, distinct from the larger
 # gap BETWEEN phases (set on the outer GridSpec, see below)
 INNER_WSPACE = 0.12
-BAR_COL_RATIO = 0.55
+BAR_COL_RATIO = 1.1     # single combined Train/Val bar chart (was 2 columns of 0.55 each)
 TABLE_COL_RATIO = 5.2
 
 
+BAR_ROW_ORDER = ["Val", "Train"]  # bottom-to-top; Train ends up drawn above Val
+
 def draw_phase_block(fig, outer_gs, row_idx, phase_idx, run, phase, bar_df, table_df,
-                      label_min_width=3, bar_thickness=1.0, bar_ax_height=2.4,
+                      label_min_width=3, bar_thickness=0.6, row_pad=0.5,
                       table_hspace=0.15):
     phase_cell = outer_gs[row_idx, 1 + phase_idx]
     inner_gs = gridspec.GridSpecFromSubplotSpec(
-        1, 3, subplot_spec=phase_cell,
-        width_ratios=[BAR_COL_RATIO, BAR_COL_RATIO, TABLE_COL_RATIO],
+        1, 2, subplot_spec=phase_cell,
+        width_ratios=[BAR_COL_RATIO, TABLE_COL_RATIO],
         wspace=INNER_WSPACE,
     )
 
-    for b, bar_name in enumerate(["Train", "Val"]):
-        ax = fig.add_subplot(inner_gs[0, b])
+    # one horizontal chart per phase, Train and Val as two rows sharing
+    # a common x-axis (data scale), instead of two separate bar axes
+    ax = fig.add_subplot(inner_gs[0, 0])
+    max_width = 0
+    for row, bar_name in enumerate(BAR_ROW_ORDER):
+        y0 = row - bar_thickness / 2
         bar_width = 0
-        # center a thinner bar within a taller axis -> bar no longer fills
-        # the full row height, leaving padding above/below
-        y0 = (bar_ax_height - bar_thickness) / 2
         for start, width, category, label in get_segments(bar_df, run, phase, bar_name):
             bar_width += width
             ax.broken_barh([(start, width)], (y0, bar_thickness),
                            facecolors=category_colors[category], edgecolor="white")
-            if label and width > label_min_width:
-                ax.text(start + width / 2, y0 + bar_thickness / 2, label,
+            if pd.notna(label) and width > label_min_width:
+                ax.text(start + width / 2, row, label,
                         ha="center", va="center", fontsize=8, color="white")
-        ax.set_ylim(0, bar_ax_height)
-        ax.set_yticks([])
-        ax.set_yticklabels('')
-        ax.set_xticks([bar_width / 2])
-        ax.set_xticklabels([bar_name], fontsize=8)
-        for s in ["top", "right", "bottom", "left"]: ax.spines[s].set_visible(False)
-        ax.tick_params(left=False)
+        max_width = max(max_width, bar_width)
+    ax.set_xlim(0, max_width if max_width else 1)
+    ax.set_ylim(-row_pad, len(BAR_ROW_ORDER) - 1 + row_pad)
+    ax.set_yticks(range(len(BAR_ROW_ORDER)))
+    ax.set_yticklabels(BAR_ROW_ORDER, fontsize=8)
+    ax.set_xticks([])
+    for s in ["top", "right", "bottom", "left"]: ax.spines[s].set_visible(False)
+    ax.tick_params(left=False)
 
-    # two header-row tables stacked vertically in the third cell, each
+    # two header-row tables stacked vertically in the second cell, each
     # sized to exactly half the cell (bbox=[0,0,1,1] forces a fit rather
     # than letting table.scale() overflow the allotted height)
     table_gs = gridspec.GridSpecFromSubplotSpec(
-        2, 1, subplot_spec=inner_gs[0, 2], hspace=table_hspace,
+        2, 1, subplot_spec=inner_gs[0, 1], hspace=table_hspace,
     )
     ax_hparams = fig.add_subplot(table_gs[0, 0]); ax_hparams.axis("off")
     ax_metrics = fig.add_subplot(table_gs[1, 0]); ax_metrics.axis("off")
@@ -256,7 +261,7 @@ def build_phase_scenario_grid(group_var='total SYNT use', top_n=4,
     # first-column header names what the row values below represent
     ax_col_label = fig.add_subplot(outer_gs[0, 0]); ax_col_label.axis("off")
     ax_col_label.text(0.5, 0.2, group_var, fontweight="bold", fontsize=7,
-                       ha="center", va="center") # , rotation=90
+                       ha="center", va="center", rotation=90)
 
     for p, phase in enumerate(phases):
         ax = fig.add_subplot(outer_gs[0, 1 + p]); ax.axis("off")

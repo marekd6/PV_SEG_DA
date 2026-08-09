@@ -5,8 +5,8 @@ from matplotlib.patches import Patch
 
 from desired_plots_tabs_top_lvl import *
 
-TRAIN_WIDTHS = {"SYNT": 40, "DK": 5, "GDA": 3}
-VAL_WIDTHS = {"SYNT": 10, "DK": 3, "GDA": 2}
+TRAIN_WIDTHS = {"SYNT": 15, "DK": 6, "GDA": 3}
+VAL_WIDTHS = {"SYNT": 10, "DK": 5, "GDA": 4}
 
 MIX_CODE = {"train": "subm", "val": "m"}
 SYNTH_ONLY_CODES = {"s", "sub"}
@@ -16,16 +16,22 @@ CODE_TO_CATEGORY = {"s": "SYNT", "sub": "SYNT", "dk": "DK", "gda": "GDA"}
 
 def _train_segments(train_code, sub_value):
     """Return [(category, width, label_or_None), ...] for the train bar."""
+    sv = sub_value
+    ss = sub_value
+    if sv in ['mix', 'composite']:
+        sv = 9
+        ss = '9'
+    sv = min(1, float(sv)/100 * 3.75)
     if train_code == MIX_CODE["train"]:
         return [
-            ("SYNT", TRAIN_WIDTHS["SYNT"], str(sub_value)),
+            ("SYNT", TRAIN_WIDTHS["SYNT"]*sv, ss),
             ("DK", TRAIN_WIDTHS["DK"], None),
         ]
     if train_code in SYNTH_ONLY_CODES:
-        return [("SYNT", TRAIN_WIDTHS["SYNT"], str(sub_value))]
+        return [("SYNT", TRAIN_WIDTHS["SYNT"]*sv, ss)]
     # pass-through single category (e.g. 'dk', 'gda') -- no label, 'sub' doesn't apply
     category = CODE_TO_CATEGORY.get(train_code, train_code.upper())
-    return [(category, TRAIN_WIDTHS.get(category, 10), None)]
+    return [(category, TRAIN_WIDTHS.get(category, 1), None)]
 
 
 def _val_segments(val_code):
@@ -121,7 +127,7 @@ TABLE_COL_RATIO = 5.2
 
 BAR_ROW_ORDER = ["Val", "Train"]  # bottom-to-top; Train ends up drawn above Val
 
-def draw_phase_block(fig, phase_cell, run, phase, bar_df, table_df,
+def draw_phase_block(fig, phase_cell, run, phase, bar_df, table_df, xlim_max,
                       label_min_width=3, bar_thickness=0.6, row_pad=0.5,
                       table_hspace=0.15):
     inner_gs = gridspec.GridSpecFromSubplotSpec(
@@ -133,19 +139,15 @@ def draw_phase_block(fig, phase_cell, run, phase, bar_df, table_df,
     # one horizontal chart per phase, Train and Val as two rows sharing
     # a common x-axis (data scale), instead of two separate bar axes
     ax = fig.add_subplot(inner_gs[0, 0])
-    max_width = 0
     for row, bar_name in enumerate(BAR_ROW_ORDER):
         y0 = row - bar_thickness / 2
-        bar_width = 0
         for start, width, category, label in get_segments(bar_df, run, phase, bar_name):
-            bar_width += width
             ax.broken_barh([(start, width)], (y0, bar_thickness),
                            facecolors=category_colors[category], edgecolor="white")
             if pd.notna(label) and width > label_min_width:
-                ax.text(start + width / 2, row, label,
+                ax.text(start + width / 2, row, f'{label}%',
                         ha="center", va="center", fontsize=8, color="white")
-        max_width = max(max_width, bar_width)
-    ax.set_xlim(0, max_width if max_width else 1)
+    ax.set_xlim(0, xlim_max)
     ax.set_ylim(-row_pad, len(BAR_ROW_ORDER) - 1 + row_pad)
     ax.set_yticks(range(len(BAR_ROW_ORDER)))
     ax.set_yticklabels(BAR_ROW_ORDER, fontsize=8)
@@ -238,8 +240,14 @@ def build_phase_scenario_grid(group_var='total SYNT use',
     phases = bar_df["phase"].unique().tolist()
     row_labels = {run: f"{_fmt_group_val(ph[ph[entry_col] == run][group_var].iloc[0])} ({run})" for run in records}
 
+    # one shared x-scale for every bar chart in the grid, so a given defined
+    # width (e.g. DK=12) is always drawn at the same physical size, instead
+    # of each phase-block rescaling to its own local max
+    xlim_max = (bar_df.groupby(['run', 'phase', 'bar_name'])['width'].sum().max())
+
     n_records, n_phases = len(records), len(phases)
     fig = plt.figure(figsize=(11.7, 8.3))
+
     # root: 2 columns (label | phases-block), spacing between them controlled
     # independently from the spacing BETWEEN phases (set below, on phases_gs)
     root_gs = gridspec.GridSpec(
@@ -279,7 +287,7 @@ def build_phase_scenario_grid(group_var='total SYNT use',
         ax_label.text(0.5, 0.5, row_labels[run], fontweight="bold", fontsize=8,
                       ha="center", va="center", rotation=90)
         for p, phase in enumerate(phases):
-            draw_phase_block(fig, phases_gs[row_idx, p], run, phase, bar_df, table_df)
+            draw_phase_block(fig, phases_gs[row_idx, p], run, phase, bar_df, table_df, xlim_max)
 
     legend_handles = [Patch(facecolor=c, label=cat) for cat, c in category_colors.items()]
     fig.legend(handles=legend_handles, loc="lower center", ncol=len(category_colors),

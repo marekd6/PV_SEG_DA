@@ -11,7 +11,7 @@ import multiprocessing
 
 
 DIR = 'CSV/joint_ph_charts/res_dfs4'
-DIR = 'joint_ph_charts/res_dfs5'
+DIR = 'joint_ph_charts/res_dfs6'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',

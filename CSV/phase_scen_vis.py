@@ -79,8 +79,9 @@ def transform(raw_df):
                               "start": start, "width": width, "category": category, "label": label})
 
         # pivot the 3 test_set/iou rows into one wide row for the table
-        row = {"run": entry_id, "phase": phase, 'bs': first['batch_size'], 'epochs': first['epochs'],
-               'lr enc': first['lrenc'], 'lr dec': first['lrdec'], 'wd': first['wd'], 'Workload': first['Workload'], 'Runtime': first['Runtime']}
+        row = {"run": entry_id, "phase": phase, 'bs': first['batch_size'], 'epochs': first['epochs'], 
+               'eps': 1+first['epochs_done'], 'Workload': first['Workload'], 'Runtime': first['Runtime'],
+               'lr enc': first['lrenc'], 'lr dec': first['lrdec'], 'wd': first['wd']} #, 'Workload increase': first['Workload increase']}
         for _, r in group.iterrows():
             if r['test set'] == 'GDA' or True:
                 row[r["test set"]] = r["IoU"]
@@ -104,11 +105,11 @@ def get_table_rows(table_df, run, phase):
     hparam_ks, hparam_vs = [], []
     metric_ks, metric_vs = [], []
     for k, v in zip(param_cols, tv):
-        if k in ['DK', 'GDA', 'SYNT'] + ['Runtime', 'Workload']:
+        if k in ['DK', 'GDA', 'SYNT'] + ['Runtime', 'Workload', 'Workload increase', 'eps']:
             # kk = 'SYNTHETIC' if k == 'SYNT' else k
             kk = k
             metric_ks.append(kk)
-            if kk == 'Runtime':
+            if kk in ['Runtime', 'eps']:
                 metric_vs.append(f"{v:.0f}")
             else:
                 metric_vs.append(f"{v:.3f}")
@@ -211,8 +212,7 @@ def extract_full_entries(df: pd.DataFrame, level: str = 'total SYNT use'):
 
 
 def build_phase_scenario_grid(group_var='total SYNT use',
-                               entry_col='entry_id', title=None,
-                               save_name='top_scens_by_synth.png'):
+                               entry_col='entry_id', title=None):
     """
     Rank distinct entries by `group_var` (descending) and render the
     phase x (train/val/tables) grid for the top `top_n` of them.
@@ -220,15 +220,18 @@ def build_phase_scenario_grid(group_var='total SYNT use',
     First column shows, per row, "<group_var value> (<entry_id>)", with
     `group_var` itself as the column header.
     """
-    cols = HPARAM_COLS_BASE_CAT + ['IoU', 'phase', 'test set', entry_col, group_var, 'epochs'] + ['Runtime', 'Workload']
+    save_name = f'vis_{group_var}.png'
+    cols = HPARAM_COLS_BASE_CAT + ['IoU', 'phase', 'test set', entry_col, group_var, 'epochs', 'comb_key'] + ['Runtime', 'Workload', 'epochs_done']#, 'Workload increase']
     ph = total_df_treatment(FILES['joint'], joint=True)
     cols = list(set(cols) & set(ph.columns))
-    print(cols, 'cols')
+    if not SAVING:
+        print(cols, 'cols')
     ph = ph[cols]
     ph = extract_full_entries(ph, group_var)
 
     if not SAVING:
-        print(ph)
+        print('here')
+        print(ph[['comb_key', group_var]])
 
     bar_df, table_df = transform(ph)
     if not SAVING:
@@ -302,4 +305,12 @@ def build_phase_scenario_grid(group_var='total SYNT use',
     return fig
 
 
-build_phase_scenario_grid()
+def main():
+    # NOTE epochs_done == best epoch
+    build_phase_scenario_grid()
+    build_phase_scenario_grid(group_var='total DK use')
+    build_phase_scenario_grid(group_var='total GDA use')
+    # build_phase_scenario_grid(group_var='total no. unique DS') # old unique cnt
+
+if __name__ == '__main__':
+    main()

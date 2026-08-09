@@ -370,6 +370,7 @@ def process_comb_cum_calcs(df: pd.DataFrame):
     df['Sworkload'] = 0 # df['3_Workload'] # sum
 
     df['total no. unique DS'] = df['comb_key'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) # number of DSs
+    # df['total no. unique DS'] = df['comb_key'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) # TODO subm as dk sub s
     df['1_cumul. no. unique DS'] = df['tr_val_x'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst))))
     df['2_cumul. no. unique DS'] = df['tr_val_y'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) + df['1_cumul. no. unique DS']
     df['3_cumul. no. unique DS'] = df['tr_val'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) + df['2_cumul. no. unique DS']
@@ -384,7 +385,7 @@ def process_comb_cum_calcs(df: pd.DataFrame):
     df['total DK use tr'] = [x.count('dk') for x in df['trains']] # how many DKs: dk
     df['total DK use tr'] += [x.count('m') for x in df['trains']] # plus how many MIXs: m
     df['total GDA use tr'] = [x.count('gda') for x in df['trains']] # how many GDAs in train only
-    # TODO tak, train/val only też
+    # TODO tak, val only też
 
     df['DS_scores_sum'] = df['dist_x'] + df['dist_y'] + df['dist'] # sum of 1, 2, 3 scores
     # df['DS_scores_sum'] = df['DS_scores_sum'] / 3

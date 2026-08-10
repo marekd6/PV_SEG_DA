@@ -18,7 +18,7 @@ SAVING = True
 # SAVING = False
 
 SAVEDIR = 'CSV/joint_ph_charts/selected3/g'
-SAVEDIR = 'joint_ph_charts/selected3/t'
+SAVEDIR = 'joint_ph_charts/selected3/tt'
 
 LMT = False
 
@@ -34,7 +34,7 @@ IOU_COLS_GDA = ["3_test_GDA_iou", "3_test/GDA/iou", "1_test/GDA/iou",
                 "2_test/GDA/iou", "1_test_GDA_iou", "2_test_GDA_iou"]
 RAW_IOU_COLS = ['test_SYNT_iou', 'test_GDA_iou', 'test_DK_iou']
 
-HPARAM_COLS_BASE_CAT = ['train', 'sub', 'tr_val', 'loss', 'val', 'src', 'batch_size', 'wd', 'lrdec', 'ema', 'warmup_epochs', 'lrenc']
+HPARAM_COLS_BASE_CAT = ['train', 'sub', 'tr_val', 'loss', 'val', 'src', 'batch_size', 'wd', 'lrdec', 'ema', 'warmup_epochs', 'lrenc', 'GPU']
 HPARAM_COLS_BASE_REL = ['Runtime', 'workload']
 HPARAM_COLS_BASE = ['epochs', 'ID', 'epochs_done', 'epoch', 'Sweep', 'fn', ] + HPARAM_COLS_BASE_CAT + HPARAM_COLS_BASE_REL
 CALC_COLS_BASE = ['re_t', 'do_t', 're_v', 'real', 'w_v', 'w_t', 'dom', 'do_v', 'sub_mult', 'dist']
@@ -43,7 +43,7 @@ SNGL_COLS_BASES = CALC_COLS_BASE + HPARAM_COLS_BASE + RAW_IOU_COLS + ['SYNT use'
 JOINT_COLS_BASES = SNGL_COLS_BASES + ['Walltime', 'Workload', 'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use', 'cumul. no. unique DS'] # the cums
 
 SNGL_FIXED_COLS = ['entry_id']
-GLOB_FIXED_COLS = ['comb_key', 'trains', 'Sworkload', 'total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use', 
+GLOB_FIXED_COLS = ['comb_key', 'ck', 'trains', 'Sworkload', 'total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use', 
                    'total SYNT use tr', 'total DK use tr', 'total GDA use tr',
              'DS_scores_sum', 'Sdom_raw', 'Sreal_raw', 'DS_score_tot_raw', 'DS_score_tot',
              'Sdom', 'Sreal', 'DS_score_raw', 'DS_score', 'ddiff'] + SNGL_FIXED_COLS
@@ -369,8 +369,11 @@ def process_comb_cum_calcs(df: pd.DataFrame):
 
     df['Sworkload'] = 0 # df['3_Workload'] # sum
 
-    df['total no. unique DS'] = df['comb_key'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) # number of DSs
-    # df['total no. unique DS'] = df['comb_key'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) # TODO subm as dk sub s
+    # df['total no. unique DS'] = df['comb_key'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) # number of DSs
+    df['ck'] = df['comb_key'].str.replace('subm', 'dk_s')
+    df['ck'] = df['ck'].str.replace('sub', 's')
+    df['ck'] = df['ck'].str.replace('m', 'dk_s')
+    df['total no. unique DS'] = df['ck'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) # number of DSs
     df['1_cumul. no. unique DS'] = df['tr_val_x'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst))))
     df['2_cumul. no. unique DS'] = df['tr_val_y'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) + df['1_cumul. no. unique DS']
     df['3_cumul. no. unique DS'] = df['tr_val'].str.split(r'_|\|').apply(lambda lst: len(set(map(str.strip, lst)))) + df['2_cumul. no. unique DS']
@@ -465,8 +468,9 @@ def the_major_elongation(df: pd.DataFrame, stubs=SNGL_COLS_BASES, sngl_ph_nr=Non
 
         rename_map[col] = f"{base}_{num}"
 
-    print('the rename map is')
-    print(rename_map)
+    if not SAVING:
+        print('the rename map is')
+        print(rename_map)
     df = df.rename(columns=rename_map)
     # pd.set_option('display.max_columns', None)
     if not SAVING:

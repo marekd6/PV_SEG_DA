@@ -72,15 +72,17 @@ def transform(raw_df):
         val_segs = _with_starts(_val_segments(first["val"]))
 
         for start, width, category, label in train_segs:
-            bar_rows.append({"run": entry_id, "phase": phase, "bar_name": "Train",
+            bar_rows.append({'entry_id': entry_id, "phase": phase, "bar_name": "Train",
                               "start": start, "width": width, "category": category, "label": label})
         for start, width, category, label in val_segs:
-            bar_rows.append({"run": entry_id, "phase": phase, "bar_name": "Val",
+            bar_rows.append({'entry_id': entry_id, "phase": phase, "bar_name": "Val",
                               "start": start, "width": width, "category": category, "label": label})
 
         # pivot the 3 test_set/iou rows into one wide row for the table
-        row = {"run": entry_id, "phase": phase, 'bs': first['batch_size'], 'epochs': first['epochs'], 
-               'eps': 1+first['epochs_done'], 'Workload': first['Workload'], 'Runtime': first['Runtime'],
+        row = {'entry_id': entry_id, "phase": phase, 'bs': first['batch_size'], 'epochs': first['epochs'], 
+               'eps': 1+first['epochs_done'], 'Workload': first['Workload'], 
+               'Runtime': first['Runtime'], 'Walltime': first['Walltime'], 
+               'ID': first['ID'], #'fn': first['fn'].replace('.csv', '')[:min(6, len(first['fn'].replace('.csv', ''))-1)], 
                'lr enc': first['lrenc'], 'lr dec': first['lrdec'], 'wd': first['wd']} #, 'Workload increase': first['Workload increase']}
         for _, r in group.iterrows():
             if r['test set'] == 'GDA' or True:
@@ -92,29 +94,32 @@ def transform(raw_df):
 category_colors = {"DK": "#4C72B0", "GDA": "#DD8452", "SYNT": "#55A868"}
 
 def get_segments(bar_df, run, phase, bar_name):
-    sub = bar_df[(bar_df.run == run) & (bar_df.phase == phase) & (bar_df.bar_name == bar_name)]
+    sub = bar_df[(bar_df.entry_id == run) & (bar_df.phase == phase) & (bar_df.bar_name == bar_name)]
     return list(sub.sort_values("start")[["start", "width", "category", 'label']].itertuples(index=False, name=None))
 
 def get_table_rows(table_df, run, phase):
     """Split the run's params into two (cols, values) tuples: hyperparameters
     and metrics (test-set IoUs), so they can be rendered as two stacked
     header-row tables instead of one."""
-    sub = table_df[(table_df.run == run) & (table_df.phase == phase)]
-    param_cols = [c for c in table_df.columns if c not in ("run", "phase")]
+    sub = table_df[(table_df.entry_id == run) & (table_df.phase == phase)]
+    param_cols = [c for c in table_df.columns if c not in ('entry_id', "phase")]
     tv = sub[param_cols].values[0]
     hparam_ks, hparam_vs = [], []
     metric_ks, metric_vs = [], []
     for k, v in zip(param_cols, tv):
-        if k in ['DK', 'GDA', 'SYNT'] + ['Runtime', 'Workload', 'Workload increase', 'eps']:
+        if k in ['DK', 'GDA', 'SYNT'] + ['Runtime', 'Walltime', 'Workload', 'Workload increase', 'eps']:
             # kk = 'SYNTHETIC' if k == 'SYNT' else k
             kk = k
             metric_ks.append(kk)
-            if kk in ['Runtime', 'eps']:
+            if kk in ['Runtime', 'Walltime', 'eps']:
                 metric_vs.append(f"{v:.0f}")
             else:
                 metric_vs.append(f"{v:.3f}")
         else:
-            vv = f'{v:.0e}' if ('lr' in k or k == 'wd') else f'{v:.0f}'
+            if k in ['ID', 'fn']:
+                vv = v
+            else:
+                vv = f'{v:.0e}' if ('lr' in k or k == 'wd') else f'{v:.0f}'
             hparam_ks.append(k)
             hparam_vs.append(vv)
     return (hparam_ks, [hparam_vs]), (metric_ks, [metric_vs])
@@ -190,7 +195,7 @@ def _fmt_group_val(v):
         return str(v)
 
 
-def extract_full_entries(df: pd.DataFrame, level: str = 'total SYNT use'):
+def extract_full_entries2(df: pd.DataFrame, level: str = 'total SYNT use'):
     """
     For each level, find the entry_id whose phase=3 and test_set='g' row
     has the highest metric, then return ALL rows (all phases) belonging
@@ -201,11 +206,70 @@ def extract_full_entries(df: pd.DataFrame, level: str = 'total SYNT use'):
     filtered = df[(df['phase'] == 3) & (df['test set'] == 'GDA')] # TODO or among all phases - v. interseting
 
     # Step 2: find the best entry_id per level
+    gr = list(set([level, 'entry_id']))
     idx = filtered.groupby(level)['IoU'].idxmax()
-    winners = filtered.loc[idx, [level, 'entry_id']]
+    winners = filtered.loc[idx, gr]
 
     # Step 3: join back to original df to get full long-format entries
-    result = df.merge(winners, on=[level, 'entry_id'], how='inner')
+    result = df.merge(winners, on=gr, how='inner')
+
+    # Optional: sort nicely
+    return result.sort_values(gr+['phase']).reset_index(drop=True)
+
+def extract_full_entries(df: pd.DataFrame, level: str = 'total SYNT use'):
+    """
+    For each level, find the entry_id whose phase=3 and test_set='g' row
+    has the highest metric, then return ALL rows (all phases) belonging
+    to that entry_id.
+    """
+
+    # Step 1: filter to the decisive slice
+    filtered = df[(df['phase'] == 3) & (df['test set'] == 'GDA')] # TODO or among all phases - v. interseting
+
+    gr = list(set([level, 'entry_id']))
+    if level == 'entry_id':
+        # 1. Get the top 5 winners
+        winners = filtered.sort_values('IoU', ascending=False).head()
+        
+        # 2. Extract the custom order as a clean Python list (fixes Issue 2)
+        ord_list = winners[level].tolist()
+        print('ord:', ord_list)
+        
+        # 3. Filter the original df to keep only the winning entry_ids (replaces the merge)
+        result = df[df[level].isin(ord_list)].copy()
+        
+        # 4. Apply Categorical to the RESULT *after* filtering (fixes Issue 1)
+        result[level] = pd.Categorical(result[level], categories=ord_list, ordered=True)
+        
+        # 5. Sort by your custom order
+        result = result.sort_values([level, 'phase']).reset_index(drop=True)
+        
+        if not SAVING:
+            print('result')
+            print(result[[level, 'phase', 'ck']])
+            
+        return result
+    elif level == 'entry_id1':
+        winners = filtered.sort_values('IoU', ascending=False).head()
+        ord = winners.sort_values('IoU', ascending=False)[level]
+        print('ord')
+        print(ord)
+        df[level] = pd.Categorical(df[level], categories=ord, ordered=True)
+        df = df.dropna(subset=level)
+        result = df.merge(winners[gr], on=gr, how='inner').sort_values([level]).reset_index(drop=True)
+        result = result.sort_values(level)
+        if not SAVING:
+            print('result')
+            print(result[[level, 'phase', 'ck']])
+        return result
+        return result.sort_values(['phase', 'IoU', 'entry_id'], ascending=[True, False, True]).reset_index(drop=True)
+    else:
+        # Step 2: find the best entry_id per level
+        idx = filtered.groupby(level)['IoU'].idxmax()
+        winners = filtered.loc[idx, gr]
+
+    # Step 3: join back to original df to get full long-format entries
+    result = df.merge(winners, on=gr, how='inner')
 
     # Optional: sort nicely
     return result.sort_values([level, 'entry_id', 'phase']).reset_index(drop=True)
@@ -221,35 +285,40 @@ def build_phase_scenario_grid(group_var='total SYNT use',
     `group_var` itself as the column header.
     """
     save_name = f'vis_{group_var}.png'
-    cols = HPARAM_COLS_BASE_CAT + ['IoU', 'phase', 'test set', entry_col, group_var, 'epochs', 'comb_key'] + ['Runtime', 'Workload', 'epochs_done']#, 'Workload increase']
+    cols = HPARAM_COLS_BASE_CAT + ['IoU', 'phase', 'test set', entry_col, group_var, 'ck', # I-D or G-PU
+            'epochs', 'comb_key'] + ['Runtime', 'Walltime', 'Workload', 'epochs_done', 'ID', 'fn']#, 'Workload increase']
     ph = total_df_treatment(FILES['joint'], joint=True)
     cols = list(set(cols) & set(ph.columns))
     if not SAVING:
         print(cols, 'cols')
     ph = ph[cols]
     ph = extract_full_entries(ph, group_var)
+    # if group_var == entry_col:
+    #     ph = ph.head(3*3*5)
 
     if not SAVING:
         print('here')
-        print(ph[['comb_key', group_var]])
+        print(ph[['comb_key', 'ck', 'phase', group_var]])
 
     bar_df, table_df = transform(ph)
     if not SAVING:
-        print(bar_df)
-        print(table_df)
+        print('bar_df', bar_df)
+        print('table_df', table_df)
         print(table_df.dtypes)
 
-    records = bar_df["run"].unique().tolist()
+    records = bar_df['entry_id'].unique().tolist()
     phases = bar_df["phase"].unique().tolist()
     row_labels = {run: f"{_fmt_group_val(ph[ph[entry_col] == run][group_var].iloc[0])} ({run})" for run in records}
 
     # one shared x-scale for every bar chart in the grid, so a given defined
     # width (e.g. DK=12) is always drawn at the same physical size, instead
     # of each phase-block rescaling to its own local max
-    xlim_max = (bar_df.groupby(['run', 'phase', 'bar_name'])['width'].sum().max())
+    xlim_max = (bar_df.groupby(['entry_id', 'phase', 'bar_name'])['width'].sum().max())
 
     n_records, n_phases = len(records), len(phases)
-    fig = plt.figure(figsize=(11.7, 8.3))
+    fig = plt.figure(figsize=(18, 11))
+    # fig = plt.figure(figsize=(11.7, 8.3))
+    # fig = plt.figure()
 
     # root: 2 columns (label | phases-block), spacing between them controlled
     # independently from the spacing BETWEEN phases (set below, on phases_gs)
@@ -310,7 +379,8 @@ def main():
     build_phase_scenario_grid()
     build_phase_scenario_grid(group_var='total DK use')
     build_phase_scenario_grid(group_var='total GDA use')
-    # build_phase_scenario_grid(group_var='total no. unique DS') # old unique cnt
+    build_phase_scenario_grid(group_var='total no. unique DS')
+    build_phase_scenario_grid(group_var='entry_id')
 
 if __name__ == '__main__':
     main()

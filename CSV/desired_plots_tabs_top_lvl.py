@@ -11,7 +11,7 @@ import multiprocessing
 
 
 DIR = 'CSV/joint_ph_charts/res_dfs4'
-DIR = 'joint_ph_charts/res_dfs6'
+DIR = 'joint_ph_charts/res_dfs7'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
@@ -80,7 +80,7 @@ def repeat_plot(df: pd.DataFrame, fu: str, x='phase', y='IoU', hs=HS_JOINT, h_or
     if 'scatter' in chs:
         aggs=False
     xo = False
-    xord = None
+    xord = None # TODO
     if row == None:
         row_ord = None
     if col == None:
@@ -105,12 +105,13 @@ def repeat_plot(df: pd.DataFrame, fu: str, x='phase', y='IoU', hs=HS_JOINT, h_or
             gr.remove(x)
             x = h
             xx = h
-            xo = True
+            xo = True # TODO
         elif x == 'hh':
             gr.remove(x)
             xx = h
         if xo:
             xord = df[gr].drop_duplicates().sort_values(h)[x].tolist()
+            h_ord = xord # TODO
             xtra=h
         if aggs and len(gr) > 0:
             print('gr by', gr)

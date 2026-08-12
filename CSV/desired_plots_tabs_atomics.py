@@ -15,10 +15,10 @@ from new_workload import add_workload
 from os import makedirs
 
 SAVING = True
-# SAVING = False
+SAVING = False
 
 SAVEDIR = 'CSV/joint_ph_charts/selected3/g'
-SAVEDIR = 'joint_ph_charts/selected3/tt'
+SAVEDIR = 'joint_ph_charts/selected3/u2'
 
 LMT = False
 
@@ -510,7 +510,7 @@ def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
     line/scatter
     '''
     if not SAVING:
-        print('rels:',x, y, h, c,r,s,ch,size)
+        print('rels:',x, y, h, c,r,s,ch,size, xord, h_ord)
     return sns.relplot(
         data=df, # df.sort_values(by='phase'),
         kind=ch,
@@ -534,9 +534,15 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
     '''
     box/viol/bar/point/count/boxen/strip/swarm
     '''
-    if r is None and c is not None or df['phase'].nunique() == 1: # let violins fit
-            r, r_ord = c, c_ord
-            c, c_ord = None, None
+    xs = x is not None and df[x].nunique() > 4
+    hs = h is not None and (df[h].nunique() > 4 or 'tot' in h)
+    rc = r is None and c is not None
+    print('xs', xs, 'hs', hs, 'rc', rc)
+    if xs or hs: # TODO univ ver
+        r, r_ord = c, c_ord
+        c, c_ord = None, None
+    if not SAVING:
+        print('cats:', x, y, h, c, r, xord, h_ord)
     if ch == 'violin':
         # if r is None and c is not None or df['phase'].nunique() == 1: # let violins fit
         #     r, r_ord = c, c_ord
@@ -557,8 +563,9 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
             cut=0,
             density_norm='count',
             order=xord,
-            # aspect=1.8,
+            aspect=1.8,
             dodge=dg,
+            # TODO wspace?
         )
     return sns.catplot(
         data=df,
@@ -650,7 +657,7 @@ def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
 #     return g
 
 
-def plot_prod(g, x, y, h, col, row, t='', bs=None, xl='', min_max_labs=pd.DataFrame()):
+def plot_prod(g, x, y, h, col, row, t='', bs=None, xl='', min_max_labs=pd.DataFrame(), plot_labs=True):
     '''
     labels, base lines
     '''
@@ -676,12 +683,13 @@ def plot_prod(g, x, y, h, col, row, t='', bs=None, xl='', min_max_labs=pd.DataFr
     # g.set_titles("{col_name}")
     # g.set_axis_labels(x, y)
 
+    if not min_max_labs.empty and not SAVING:
+        print('min_max_labs/agg')
+        print(min_max_labs.head(30))
     mrg = 0.003
-    if not min_max_labs.empty: # TODO value from agg, loc from vert, cut=def
+    if plot_labs: # TODO value from agg, loc from vert, cut=def
         # if 'phase' in min_max_labs.columns and 'test set' in min_max_labs.columns:
             # min_max_labs = min_max_labs.sort_values(by=['phase', 'test set'])
-        if not SAVING:
-            print(min_max_labs.head(30))
         for ax in g.axes.flat: # correct viol data via cut=0; THIS ONE WORKS
             violins = [c for c in ax.collections if isinstance(c, collections.PolyCollection)]
             if not SAVING:
@@ -692,7 +700,7 @@ def plot_prod(g, x, y, h, col, row, t='', bs=None, xl='', min_max_labs=pd.DataFr
                     y_vals = verts[:, 1]
                     ymin, ymax = y_vals.min(), y_vals.max()
                     x_center = np.mean(verts[:, 0])    
-                    ax.text(x_center, ymin-mrg, f"{ymin:.3f}", ha="center", va="top")
+                    # ax.text(x_center, ymin-mrg, f"{ymin:.3f}", ha="center", va="top")
                     ax.text(x_center, ymax+mrg, f"{ymax:.3f}", ha="center", va="bottom")
         # i_base = 0
         # for ax in g.axes.flat: # the correct way to put df values onto the plot if test set present

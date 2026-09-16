@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.patches import Patch
+from blume.table import table as blume_table
 # import pandas as pd
 
 from desired_plots_tabs_top_lvl import *
@@ -21,7 +22,7 @@ def _train_segments(train_code, sub_value):
     if sv in ['mix', 'composite']:
         sv = 9
         ss = '9'
-    sv = min(1, float(sv)/100 * 3.75)
+    sv = min(1, float(sv)/100 * 3.9)
     if train_code == MIX_CODE["train"]:
         return [
             ("SYNT", TRAIN_WIDTHS["SYNT"]*sv, ss),
@@ -112,8 +113,12 @@ def get_table_rows(table_df, run, phase):
         if k in ['DK', 'GDA', 'SYNT'] + ['Runtime', 'Walltime', 'Workload', 'Workload increase', 'eps']:
             # kk = 'SYNTHETIC' if k == 'SYNT' else k
             kk = k
+            if kk == 'Walltime':
+                kk = 'T'
+            elif kk == 'Workload':
+                kk = 'W'
             metric_ks.append(kk)
-            if kk in ['Runtime', 'Walltime', 'eps']:
+            if kk in ['Runtime', 'Walltime', 'eps', 'T', 'W']:
                 metric_vs.append(f"{v:.0f}")
             else:
                 metric_vs.append(f"{v:.3f}")
@@ -128,15 +133,15 @@ def get_table_rows(table_df, run, phase):
 
 # bar/table split WITHIN a phase - kept tight, distinct from the larger
 # gap BETWEEN phases (set on the outer GridSpec, see below)
-INNER_WSPACE = 0.12
-BAR_COL_RATIO = 1.1     # single combined Train/Val bar chart (was 2 columns of 0.55 each)
+INNER_WSPACE = 0.08
+BAR_COL_RATIO = 1.15     # single combined Train/Val bar chart (was 2 columns of 0.55 each)
 TABLE_COL_RATIO = 5.2
 
 
 BAR_ROW_ORDER = ["Val", "Train"]  # bottom-to-top; Train ends up drawn above Val
 
 def draw_phase_block(fig, phase_cell, run, phase, bar_df, table_df, xlim_max,
-                      label_min_width=3, bar_thickness=0.6, row_pad=0.5,
+                      label_min_width=3, bar_thickness=0.7, row_pad=0.5,
                       table_hspace=0.15):
     inner_gs = gridspec.GridSpecFromSubplotSpec(
         1, 2, subplot_spec=phase_cell,
@@ -154,18 +159,21 @@ def draw_phase_block(fig, phase_cell, run, phase, bar_df, table_df, xlim_max,
                            facecolors=category_colors[category], edgecolor="white")
             if pd.notna(label) and width > label_min_width:
                 ax.text(start + width / 2, row, f'{label}%',
-                        ha="center", va="center", fontsize=8, color="white")
+                        ha="center", va="center", fontsize=6, color="white")
     ax.set_xlim(0, xlim_max)
     ax.set_ylim(-row_pad, len(BAR_ROW_ORDER) - 1 + row_pad)
     ax.set_yticks(range(len(BAR_ROW_ORDER)))
-    ax.set_yticklabels(BAR_ROW_ORDER, fontsize=8)
+    ax.set_yticklabels(BAR_ROW_ORDER, fontsize=7)
     ax.set_xticks([])
     for s in ["top", "right", "bottom", "left"]: ax.spines[s].set_visible(False)
     ax.tick_params(left=False)
 
     # two header-row tables stacked vertically in the second cell, each
     # sized to exactly half the cell (bbox=[0,0,1,1] forces a fit rather
-    # than letting table.scale() overflow the allotted height)
+    # than overflowing the allotted height). Using blume's table() instead
+    # of matplotlib's built-in ax.table(): it auto-grows font size to make
+    # best use of the bbox it's given (matplotlib only ever shrinks), and
+    # scales cell padding with that font size instead of a fixed amount.
     table_gs = gridspec.GridSpecFromSubplotSpec(
         2, 1, subplot_spec=inner_gs[0, 1], hspace=table_hspace,
     )
@@ -174,21 +182,19 @@ def draw_phase_block(fig, phase_cell, run, phase, bar_df, table_df, xlim_max,
 
     (hparam_cols, hparam_vals), (metric_cols, metric_vals) = get_table_rows(table_df, run, phase)
 
-    t1 = ax_hparams.table(cellText=hparam_vals, colLabels=hparam_cols,
-                           loc="center", cellLoc="center", bbox=[0, 0, 1, 1])
-    t1.auto_set_font_size(False); t1.set_fontsize(8)
+    blume_table(ax_hparams, cellText=hparam_vals, colLabels=hparam_cols,
+                loc="center", cellLoc="center", bbox=[0, 0, 1, 1])
 
-    t2 = ax_metrics.table(cellText=metric_vals, colLabels=metric_cols,
-                           loc="center", cellLoc="center", bbox=[0, 0, 1, 1])
-    t2.auto_set_font_size(False); t2.set_fontsize(8)
+    blume_table(ax_metrics, cellText=metric_vals, colLabels=metric_cols,
+                loc="center", cellLoc="center", bbox=[0, 0, 1, 1])
 
 # spacing BETWEEN phases - kept larger than the inner train/val/table
 # spacing (INNER_WSPACE, set inside draw_phase_block) so phases read as
 # visually distinct groups
-OUTER_WSPACE = 0.1
+OUTER_WSPACE = 0.17
 # spacing between the label column and the first phase - independent of
 # OUTER_WSPACE since it's controlled on a separate, outer GridSpec
-LABEL_WSPACE = 0.05
+LABEL_WSPACE = 0.1
 
 def _fmt_group_val(v):
     try:
@@ -311,6 +317,9 @@ def build_phase_scenario_grid(group_var='total SYNT use',
     records = bar_df['entry_id'].unique().tolist()
     phases = bar_df["phase"].unique().tolist()
     row_labels = {run: f"{_fmt_group_val(ph[ph[entry_col] == run][group_var].iloc[0])} ({run})" for run in records}
+    if group_var == entry_col:
+        for i, run in enumerate(records):
+            row_labels[run] = f"{i+1} ({run})"
 
     # one shared x-scale for every bar chart in the grid, so a given defined
     # width (e.g. DK=12) is always drawn at the same physical size, instead
@@ -318,7 +327,7 @@ def build_phase_scenario_grid(group_var='total SYNT use',
     xlim_max = (bar_df.groupby(['entry_id', 'phase', 'bar_name'])['width'].sum().max())
 
     n_records, n_phases = len(records), len(phases)
-    fig = plt.figure(figsize=(24.5, 14.5), dpi=150)
+    fig = plt.figure(figsize=(10.23, 6.12), dpi=200)
     # fig = plt.figure(figsize=(18, 11))
     # fig = plt.figure(figsize=(11.7, 8.3))
     # fig = plt.figure()
@@ -331,7 +340,7 @@ def build_phase_scenario_grid(group_var='total SYNT use',
         height_ratios=[0.15] + [1] * n_records,
         hspace=0.25,
         wspace=LABEL_WSPACE,
-        left=0.01, right=0.98,
+        left=0.01, right=0.99,
         top=0.95, bottom=0.08,
     )
     # nested: phases-block column split into n_phases columns - same row
@@ -345,11 +354,16 @@ def build_phase_scenario_grid(group_var='total SYNT use',
         wspace=OUTER_WSPACE,
     )
 
-    # first-column header names what the row values below represent
+        # first-column header names what the row values below represent
     ax_col_label = fig.add_subplot(root_gs[0, 0]); ax_col_label.axis("off")
-    ax_col_label.text(0.9, 0.9, group_var, fontweight="bold", fontsize=7,
+    grv = group_var
+    lft_var = 1.2
+    if group_var == entry_col:
+        grv = 'Rank'
+        lft_var = 0.9
+    ax_col_label.text(lft_var, 0.9, grv, fontweight="bold", fontsize=7,
                        ha="center", va="center") # , rotation=90)
-    ax_col_label.text(0.9, 0.2, '(run)', fontweight="bold", fontsize=7,
+    ax_col_label.text(lft_var, 0.2, '(run)', fontweight="bold", fontsize=7,
                        ha="center", va="center") # , rotation=90)
 
     for p, phase in enumerate(phases):
@@ -367,7 +381,7 @@ def build_phase_scenario_grid(group_var='total SYNT use',
     legend_handles = [Patch(facecolor=c, label=cat) for cat, c in category_colors.items()]
     fig.legend(handles=legend_handles, loc="lower center", ncol=len(category_colors),
                frameon=False, fontsize=10)
-    fig.suptitle(title or f'Top scenarios by {group_var}')
+    # fig.suptitle(title or f'Top scenarios by {grv}')
 
     if SAVING:
         fig.savefig(f'{SAVEDIR}/{save_name}')

@@ -81,8 +81,10 @@ def transform(raw_df):
         # pivot the 3 test_set/iou rows into one wide row for the table
         row = {'entry_id': entry_id, "phase": phase, 'bs': first['batch_size'], 'epochs': first['epochs'], 
                'eps': 1+first['epochs_done'], 'Workload': first['Workload'], 
-               'Runtime': first['Runtime'], 'Walltime': first['Walltime'], 
-               'ID': first['ID'], #'fn': first['fn'].replace('.csv', '')[:min(6, len(first['fn'].replace('.csv', ''))-1)], 
+            #    'Runtime': first['Runtime'], 
+               'Walltime': first['Walltime'], 
+               'EMA': first['ema'],
+            #    'ID': first['ID'], #'fn': first['fn'].replace('.csv', '')[:min(6, len(first['fn'].replace('.csv', ''))-1)], 
                'lr enc': first['lrenc'], 'lr dec': first['lrdec'], 'wd': first['wd']} #, 'Workload increase': first['Workload increase']}
         for _, r in group.iterrows():
             if r['test set'] == 'GDA' or True:
@@ -116,7 +118,7 @@ def get_table_rows(table_df, run, phase):
             else:
                 metric_vs.append(f"{v:.3f}")
         else:
-            if k in ['ID', 'fn']:
+            if k in ['ID', 'fn', 'EMA', 'GPU']:
                 vv = v
             else:
                 vv = f'{v:.0e}' if ('lr' in k or k == 'wd') else f'{v:.0f}'
@@ -183,7 +185,7 @@ def draw_phase_block(fig, phase_cell, run, phase, bar_df, table_df, xlim_max,
 # spacing BETWEEN phases - kept larger than the inner train/val/table
 # spacing (INNER_WSPACE, set inside draw_phase_block) so phases read as
 # visually distinct groups
-OUTER_WSPACE = 0.2
+OUTER_WSPACE = 0.1
 # spacing between the label column and the first phase - independent of
 # OUTER_WSPACE since it's controlled on a separate, outer GridSpec
 LABEL_WSPACE = 0.05
@@ -316,7 +318,8 @@ def build_phase_scenario_grid(group_var='total SYNT use',
     xlim_max = (bar_df.groupby(['entry_id', 'phase', 'bar_name'])['width'].sum().max())
 
     n_records, n_phases = len(records), len(phases)
-    fig = plt.figure(figsize=(18, 11))
+    fig = plt.figure(figsize=(24.5, 14.5), dpi=150)
+    # fig = plt.figure(figsize=(18, 11))
     # fig = plt.figure(figsize=(11.7, 8.3))
     # fig = plt.figure()
 

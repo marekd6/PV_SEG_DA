@@ -15,10 +15,10 @@ from new_workload import add_workload
 from os import makedirs
 
 SAVING = True
-SAVING = False
+# SAVING = False
 
 SAVEDIR = 'CSV/joint_ph_charts/selected3/g'
-SAVEDIR = 'joint_ph_charts/selected3/u2'
+SAVEDIR = 'joint_ph_charts/selected3/u6'
 
 LMT = False
 

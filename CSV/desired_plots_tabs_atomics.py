@@ -18,7 +18,7 @@ SAVING = True
 # SAVING = False
 
 SAVEDIR = 'CSV/joint_ph_charts/selected3/g'
-SAVEDIR = 'joint_ph_charts/selected3/u6'
+SAVEDIR = 'joint_ph_charts/selected3/y3'
 
 LMT = False
 
@@ -98,6 +98,9 @@ def make_categorical(df: pd.DataFrame, vars=['phase']):
         if x in df.columns:
             if x == 'sub':
                 df[x] = pd.Categorical(df[x], categories=['mix', 'composite', '15', '25', '35', '45', '55', '65', '75', '100'], ordered=True)
+                # df["sub"] = df["sub"].replace("mix", "9.1")
+                # df["sub"] = df["sub"].replace("composite", "9.1")
+                # df[x] = pd.Categorical(df[x], categories=['9.1', '15', '25', '35', '45', '55', '65', '75', '100'], ordered=True)
             else:
                 df[x] = pd.Categorical(df[x])
     return df
@@ -505,7 +508,7 @@ def the_major_elongation(df: pd.DataFrame, stubs=SNGL_COLS_BASES, sngl_ph_nr=Non
     return df
 
 
-def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None, xord=None, dg='auto'):
+def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None, xord=None, dg='auto',fu=''):
     '''
     line/scatter
     '''
@@ -530,7 +533,7 @@ def rels(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
     )
 
 
-def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='bar', size=None, xord=None, dg='auto'):
+def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='bar', size=None, xord=None, dg='auto', fu=''):
     '''
     box/viol/bar/point/count/boxen/strip/swarm
     '''
@@ -538,15 +541,19 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
     hs = h is not None and (df[h].nunique() > 4 or 'tot' in h)
     rc = r is None and c is not None
     print('xs', xs, 'hs', hs, 'rc', rc)
-    if xs or hs: # TODO univ ver
-        r, r_ord = c, c_ord
-        c, c_ord = None, None
+    # if xs or hs: # TODO univ ver
+    #     r, r_ord = c, c_ord
+    #     c, c_ord = None, None
     if not SAVING:
         print('cats:', x, y, h, c, r, xord, h_ord)
     if ch == 'violin':
-        # if r is None and c is not None or df['phase'].nunique() == 1: # let violins fit
-        #     r, r_ord = c, c_ord
-        #     c, c_ord = None, None
+        # if r is None and c is not None and df['phase'].nunique() > 1: # let violins fit
+        if False:
+            r, r_ord = c, c_ord
+            c, c_ord = None, None
+            plt.figure(figsize=(5.9, 8.98)) # vertical viol
+        else:
+            plt.figure(figsize=(5.9, 1.862)) # horizontal 3
         return sns.catplot(
             data=df,
             kind=ch,
@@ -563,10 +570,14 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
             cut=0,
             density_norm='count',
             order=xord,
-            aspect=1.8,
+            # aspect=1.8,
             dodge=dg,
             # TODO wspace?
         )
+    if '9' in fu:
+        plt.figure(figsize=(5.9, 8.98)) # square 9
+    else:
+        plt.figure(figsize=(5.9, 2)) # horizontal 3
     return sns.catplot(
         data=df,
         kind=ch,
@@ -583,7 +594,7 @@ def cats(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_or
         dodge=dg,
     )
 
-def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None):
+def line(df: pd.DataFrame, x, y, h, c=None, c_ord=None, r=None, r_ord=None, h_ord=None, s=None, ch='line', size=None,fu=''):
     '''
     rel: line
     '''

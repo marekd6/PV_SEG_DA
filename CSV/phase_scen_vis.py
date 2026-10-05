@@ -80,11 +80,11 @@ def transform(raw_df):
                               "start": start, "width": width, "category": category, "label": label})
 
         # pivot the 3 test_set/iou rows into one wide row for the table
-        row = {'entry_id': entry_id, "phase": phase, 'bs': first['batch_size'], 'epochs': first['epochs'], 
+        row = {'entry_id': entry_id, "phase": phase, 'bs': first['batch_size'], 'ep': first['epochs'], 
                'eps': 1+first['epochs_done'], 'Workload': first['Workload'], 
             #    'Runtime': first['Runtime'], 
                'Walltime': first['Walltime'], 
-               'EMA': first['ema'],
+               'ema': first['ema'],
             #    'ID': first['ID'], #'fn': first['fn'].replace('.csv', '')[:min(6, len(first['fn'].replace('.csv', ''))-1)], 
                'lr enc': first['lrenc'], 'lr dec': first['lrdec'], 'wd': first['wd']} #, 'Workload increase': first['Workload increase']}
         for _, r in group.iterrows():
@@ -117,13 +117,15 @@ def get_table_rows(table_df, run, phase):
                 kk = 'T'
             elif kk == 'Workload':
                 kk = 'W'
+            elif kk == 'eps':
+                kk = 'E'
             metric_ks.append(kk)
-            if kk in ['Runtime', 'Walltime', 'eps', 'T', 'W']:
+            if kk in ['Runtime', 'Walltime', 'E', 'T', 'W']:
                 metric_vs.append(f"{v:.0f}")
             else:
                 metric_vs.append(f"{v:.3f}")
         else:
-            if k in ['ID', 'fn', 'EMA', 'GPU']:
+            if k in ['ID', 'fn', 'ema', 'GPU']:
                 vv = v
             else:
                 vv = f'{v:.0e}' if ('lr' in k or k == 'wd') else f'{v:.0f}'
@@ -232,6 +234,9 @@ def extract_full_entries(df: pd.DataFrame, level: str = 'total SYNT use'):
     """
 
     # Step 1: filter to the decisive slice
+    # mod_ph1_3, mod_ph2_3, and ID are carried through here too (kept in the
+    # column selection in build_phase_scenario_grid), so they're accessible
+    # off `filtered` the same way `level`/'IoU' are, if needed for filtering.
     filtered = df[(df['phase'] == 3) & (df['test set'] == 'GDA')] # TODO or among all phases - v. interseting
 
     gr = list(set([level, 'entry_id']))
@@ -294,7 +299,8 @@ def build_phase_scenario_grid(group_var='total SYNT use',
     """
     save_name = f'vis_{group_var}.png'
     cols = HPARAM_COLS_BASE_CAT + ['IoU', 'phase', 'test set', entry_col, group_var, 'ck', # I-D or G-PU
-            'epochs', 'comb_key'] + ['Runtime', 'Walltime', 'Workload', 'epochs_done', 'ID', 'fn']#, 'Workload increase']
+            'epochs', 'comb_key'] + ['Runtime', 'Walltime', 'Workload', 'epochs_done', 'ID', 'fn',
+            'mod_ph1_3', 'mod_ph2_3']#, 'Workload increase']
     ph = total_df_treatment(FILES['joint'], joint=True)
     cols = list(set(cols) & set(ph.columns))
     if not SAVING:
@@ -321,13 +327,26 @@ def build_phase_scenario_grid(group_var='total SYNT use',
         for i, run in enumerate(records):
             row_labels[run] = f"{i+1} ({run})"
 
+    # second row-label line, shown below the group-var/run-id line.
+    # Truncated per-component (ROW_LABEL2_MAXLEN) since this line has to
+    # share the same narrow, rotated cell as the first - tune the length
+    # (and the two fontsize values below) to how long these actually run
+    # in your real data.
+    ROW_LABEL2_MAXLEN = 4
+    def _row_label2(run):
+        first = ph[ph[entry_col] == run].iloc[8]
+        parts = (first['mod_ph1_3'], first['mod_ph2_3'], first['ID'])
+        return "-".join(str(p)[:ROW_LABEL2_MAXLEN] for p in parts)
+    row_labels2 = {run: _row_label2(run) for run in records}
+
     # one shared x-scale for every bar chart in the grid, so a given defined
     # width (e.g. DK=12) is always drawn at the same physical size, instead
     # of each phase-block rescaling to its own local max
     xlim_max = (bar_df.groupby(['entry_id', 'phase', 'bar_name'])['width'].sum().max())
 
     n_records, n_phases = len(records), len(phases)
-    fig = plt.figure(figsize=(10.23, 6.12), dpi=200)
+    # fig = plt.figure(figsize=(10.23, 6.12), dpi=600)
+    fig = plt.figure(figsize=(10.3, 6.3), dpi=600)
     # fig = plt.figure(figsize=(18, 11))
     # fig = plt.figure(figsize=(11.7, 8.3))
     # fig = plt.figure()
@@ -373,7 +392,9 @@ def build_phase_scenario_grid(group_var='total SYNT use',
     for r, run in enumerate(records):
         row_idx = r + 1
         ax_label = fig.add_subplot(root_gs[row_idx, 0]); ax_label.axis("off")
-        ax_label.text(0.5, 0.5, row_labels[run], fontweight="bold", fontsize=8,
+        ax_label.text(0.5, 0.4, row_labels[run], fontweight="bold", fontsize=6,
+                      ha="center", va="center", rotation=90)
+        ax_label.text(0.75, 0.4, row_labels2[run], fontweight="bold", fontsize=4.5,
                       ha="center", va="center", rotation=90)
         for p, phase in enumerate(phases):
             draw_phase_block(fig, phases_gs[row_idx, p], run, phase, bar_df, table_df, xlim_max)
@@ -396,8 +417,8 @@ def main():
     build_phase_scenario_grid()
     build_phase_scenario_grid(group_var='total DK use')
     build_phase_scenario_grid(group_var='total GDA use')
-    build_phase_scenario_grid(group_var='total no. unique DS')
-    build_phase_scenario_grid(group_var='entry_id')
+    # build_phase_scenario_grid(group_var='total no. unique DS')
+    # build_phase_scenario_grid(group_var='entry_id')
 
 if __name__ == '__main__':
     main()

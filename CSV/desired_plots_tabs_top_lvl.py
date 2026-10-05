@@ -6,54 +6,40 @@ saving tabs & charts
 '''
 
 
-from os import makedirs
 from desired_plots_tabs_atomics import *
+import multiprocessing
 
 
-IOU_COLS_GDA = ["3_test_GDA_iou", "3_test/GDA/iou", "1_test/GDA/iou",  
-                "2_test/GDA/iou", "1_test_GDA_iou", "2_test_GDA_iou"]
-IOU_COLS_SYNT = ["3_test_SYNT_iou", "1_test/SYNT/iou", "2_test/SYNT/iou", 
-            "3_test/SYNT/iou", "1_test_SYNT_iou", "2_test_SYNT_iou"]
-IOU_COLS_DK = ["3_test_DK_iou", "1_test/DK/iou", "2_test/DK/iou", 
-            "3_test/DK/iou", "1_test_DK_iou", "2_test_DK_iou"]
-
-IOU_COLS = IOU_COLS_GDA + IOU_COLS_SYNT + IOU_COLS_DK
-
-DIR = 'CSV/joint_ph_charts/res_dfs3'
-SAVEDIR = 'CSV/joint_ph_charts/selected2/i'
+DIR = 'CSV/joint_ph_charts/res_dfs4'
+DIR = 'joint_ph_charts/res_dfs7'
 
 FILES = {
     'joint': f'{DIR}/ph123b.csv',
     'ph1': f'{DIR}/proc_ph1.csv',
-    'ph2': f'{DIR}/proc_ph2.csv',
-    'ph3': f'{DIR}/proc_ph3.csv',
+    'subs_16': f'{DIR}/subs_16.csv',
     'concat': f'{DIR}/cnc123b.csv',
 }
 
 
-HS_SNGL = ['tr_val', 'dom', 'real', 'dist']
-HS_JOINT = ['cnt_ds', 's_lvl', 'gda_lvl', 'dk_lvl']
-HS_CUM = ['cnt_ds_cum', 's_lvl_cum', 'gda_lvl_cum', 'dk_lvl_cum'] # TODO by cum aggs
-HS_ALL = HS_SNGL + HS_JOINT
+HS_SNGL = ['train_val', 'SYNT use', 'DK use', 'GDA use']
+HS_JOINT = ['total no. unique DS', 'total SYNT use', 'total DK use', 'total GDA use']
+HS_JOINT.extend(['total SYNT use tr', 'total DK use tr', 'total GDA use tr'])
+HS_CUM = ['cumul. no. unique DS', 'cumul. SYNT use', 'cumul. DK use', 'cumul. GDA use']
+HS_ALL = HS_SNGL + HS_CUM + HS_JOINT
 
-# DS: workload (Ssize*factor) ===================== * EPOCHS done
-# sub = 0.1 * |S| * sub
-# dk = 1 * |dk|
-# m = dk + sub
-# DS: diversity (form/content - realism/domain) Sszie
-# real(s) == real(sub)
-# s = 0
-# dk = 1
-# sub = 0
-# m = [real(sub)*|s|*sub + real(dk)*|dk|] / (|s|*sub + |dk|)
-#
-# DS: workload, diversity - train, val; per file
-# DS: workload, diversity - agg as D = Sd or D = d(Sreal, Sdom); W = Sw
-# DS: count uniqe - comb_key only
+CH_BBV = ['bar', 'box', 'violin']
+if not SAVING:
+    CH_BBV = ['bar']
+    CH_BBV = ['violin']
+CH_CAT = CH_BBV + ['line']
+
+BASELINES = [0.71, 0.617, 0.359]
 
 
-def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=False, swap_dir_ord=False):
+def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=False, swap_dir_ord=False, xtra=''):
     if SAVING:
+        if xtra != '':
+            keyy = str(keyy) + '_' + xtra
         d = f'{SAVEDIR}/{keyy}/{fu_name}'
         if swap_dir_ord:
             d = f'{SAVEDIR}/{fu_name}/{keyy}'
@@ -65,99 +51,263 @@ def save_plt_df(df: pd.DataFrame, g, fu_name: str, chart: str, keyy: str, sv_df=
             df.to_csv(ppdf)
         else:
             g.savefig(ppp)
+            print(ppp)
             plt.close()
     elif not sv_df:
         plt.show()
+        # plt.close()
 
 
-def generalised(df: pd.DataFrame, fu: str, x='phase', y='IoU', col='test set', col_order=["DK", "GDA", "SYNT"],
-                          row=None, row_ord=None, hs=HS_JOINT, chs=['point', 'bar', 'box', 'violin'], 
-                          ch_fu=cats, widen_fu=widen_phases, s=None, bs=None, tit='', xl=''):
-    '''
-    widen, plot & agg, save
-
-    all `hs` and `chs` for `ch_fu` and `widen_fu`
-    '''
-    df_org = df.copy()
-    for h in hs:
-        xx, hh, xy = x, h, x
-        s, size, h_ord = None, None, None
-        if x == 'hs':
-            xx = 'phase'
-            hh = None
-            xy = h
-        if widen_fu in [widen_runtime_agg, widen_runtime_no_agg, widen_workload_agg, widen_workload_no_agg]:
-            df, h_ord = widen_fu(df_org, h)
-            s = h
-        elif x != 'phase' and x != 'hs' and widen_fu == widen_phases:
-            df = widen_fu(df_org, h=[h, x])
-            s = h
+def rep_plts(df, x, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu, agg, xord=None, xtra='', dg='auto'):
+    min_max_labs = agg
+    for ch in chs:
+        if not SAVING:
+            # print(df.head(1))
+            print('rep_plts', x, y, h, col, row, s)
+        if ch == 'line2':
+            g = line(df, x, y, h, col, col_order, row, row_ord, ch=ch, h_ord=h_ord, s=s, size=s)
         else:
-            df = widen_fu(df_org, xx, y, [h], col)
-        for ch in chs:
-            print(xy, y, hh, col, row, ch, h_ord)
-            if not SAVING:
-                print(df.head(1))
-            g = ch_fu(df, xy, y, hh, col, col_order, row, row_ord, ch=ch, h_ord=h_ord, s=s, size=size)
-            g = plot_prod(g, xy, y, hh, bs=bs, t=tit, xl=xl)
-            save_plt_df(df, g, fu, ch, h) # g
-        save_plt_df(df, g, fu, ch, h, True) # df
-        # save_plt_df(df.groupby(by=h).agg('mean'), g, f'{fu}_agg', ch, h, True) # df TODO save wide/agg df
+            g = ch_fu(df, x, y, h, col, col_order, row, row_ord, ch=ch, h_ord=h_ord, s=s, size=s, xord=xord, dg=dg)
+        g = plot_prod(g, x, y, h, col, row, bs=bs, t=tit, xl=xl, min_max_labs=min_max_labs, plot_labs=(ch!='line'))
+        save_plt_df(df, g, fu, ch, h, xtra=xtra) # g
 
 
-def generalised_joints_4D(df: pd.DataFrame, fl: str): # TODO split y=IoU and other; dist vs. raw vs. line
-    # generalised(df, f'{fl}_phase', y='Workload', hs=['phase'], ch_fu=cats, widen_fu=widen_phases_h) # IoU avg+CI by ph, set
-    generalised(df, f'{fl}_phase', ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, h, set
-    generalised(df, f'{fl}_phase', hs=['phase'], ch_fu=cats, widen_fu=widen_phases_id, bs=[0.71, 0.617, 0.359]) # IoU avg+CI by ph, set
-    generalised(df, f'{fl}_Walltime', "Walltime", chs=['line'], ch_fu=rels, widen_fu=widen_runtime_agg, xl='[s]') # IoU avg by (WT avg by ph, h, set) | (IoU) by ph, h, set | (WT) by ph, h | 3xWTs
-    generalised(df, f'{fl}_Workload', "Workload", chs=['line'], ch_fu=rels, widen_fu=widen_workload_agg) # IoU avg by (WL avg by ph, h, set) | (IoU) by ph, h, set | (WL) by ph, h | 3xWLs
-    # generalised(df, f'{fl}_effective_Workload', "Workload", chs=['line'], ch_fu=rels, widen_fu=widen_workload_agg) # IoU avg by (WL avg by ph, h, set) | (IoU) by ph, h, set | (WL) by ph, h | 3xWLs
-    generalised(df, f'{fl}_Walltime', 'Walltime', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_runtime_no_agg, xl='[s]') # 3xWTs
-    generalised(df, f'{fl}_Workload', 'Workload', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_workload_no_agg) # 3xWLs
-    # generalised(df, f'{fl}_Workload', y='Sworkload', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], ch_fu=cats, widen_fu=widen_workload_no_agg) # 3xWLs
-    # generalised(df, f'{fl}_Workload', y='Workload', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], ch_fu=cats, widen_fu=widen_workload_no_agg) # 3xWLs
-    # generalised(df, f'{fl}_Workload', 'Sworkload', row='phase', hs=HS_ALL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_workload_no_agg) # 3xWLs
-    generalised(df, f'{fl}_phase9', ch_fu=cats, x='hs', row='phase', row_ord=[1, 2, 3], chs=['bar', 'box', 'violin']) # by key
+def repeat_plot(df: pd.DataFrame, fu: str, x='phase', y='IoU', hs=HS_JOINT, h_ord=None, 
+                col='test set', col_order=["DK", "GDA", "SYNT"], row='phase', row_ord=[1, 2, 3], 
+                chs=CH_BBV, ch_fu=cats, s=None, bs=None, tit='', xl='', aggs=True, dg='auto'):
+    '''
+    plot & agg, save
+    '''
+    if 'scatter' in chs:
+        aggs=False
+    xo = False
+    xord = None # TODO
+    if row == None:
+        row_ord = None
+    if col == None:
+        col_order = None
+    if len(hs) == 0:
+        gr = list(set([q for q in [x, col, row] if q is not None]))
+        if aggs and len(gr) > 0:
+            print('gr by', gr)
+            agg = df.groupby(gr)[y].agg(min='min', Q1=lambda x: x.quantile(0.25), mean='mean', median='median',
+                                        Q3=lambda x: x.quantile(0.75), max='max', count='count').reset_index()
+        else:
+            agg = pd.DataFrame([1,1,1])
+        rep_plts(df, x, y, None, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu, agg, dg)
+        save_plt_df(agg, None, fu, '', '', True) # df
+    for h in hs:
+        if h not in df.columns:
+            continue
+        xtra = ''
+        xx = x
+        gr = list(set([q for q in [x, col, row, h] if q is not None]))
+        if x == 'h':
+            gr.remove(x)
+            x = h
+            xx = h
+            xo = True # TODO
+            print('hit h')
+        elif x == 'hh':
+            gr.remove(x)
+            xx = h
+            print('hit hh')
+        # if xo:
+        if xo: # or (h != 'h' and h != 'hh'):
+            print('h:', h, 'x:', x)
+            xord = df[gr].drop_duplicates().sort_values(h)[x].tolist()
+            # h_ord = xord # TODO
+            # h_ord = df[gr].drop_duplicates().sort_values(h)[h].tolist()
+            # h_ord = list(set(h_ord))
+            # h_ord = df[gr].unique().sort_values(h)[h].tolist()
+            xtra=h
+        if aggs and len(gr) > 0:
+            print('gr by', gr)
+            if x != 'h' and 'line' not in chs: # or Walltm/Workl rel line TODO chck again - train val flipped without it
+                df = df.sort_values(gr)
+            agg = df.groupby(gr)[y].agg(min='min', Q1=lambda x: x.quantile(0.25), mean='mean', median='median',
+                                        Q3=lambda x: x.quantile(0.75), max='max', count='count').reset_index()
+            # if xo:
+                # h_ord = agg[h].unique().tolist()
+            # xord = agg[''].unique().tolist()
+        else:
+            agg = pd.DataFrame([1,1,1])
+        rep_plts(df, xx, y, h, col, col_order, row, row_ord, s, chs, fu, h_ord, bs, tit, xl, ch_fu, agg, xord, xtra, dg)
+        save_plt_df(agg, None, fu, '', h, True) # df
+        # h_ord, xord = None, None # może zbędne albo tylko to, bez powyższych
 
 
-def generalised_concats_4D(df: pd.DataFrame, fl: str):
-    generalised(df, f'{fl}_Runtime', 'Runtime', row='phase', hs=HS_SNGL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases, xl='[s]') # 3xWTs
-    generalised(df, f'{fl}_workload', 'workload', row='phase', hs=HS_SNGL, row_ord=[1, 2, 3], chs=['scatter'], ch_fu=rels, widen_fu=widen_phases) # 3xWTs
+def joint_plts_auto_agg_4D(df: pd.DataFrame, fl: str='joint'): # OK
+    '''x=phase, y=IoU, col=set, h=HS_JOINT; bar (viol, box, pt-line - może ten lineplot, nie catplot)'''
+    print('joint_plts_auto_agg_4D')
+    # repeat_plot(df, f'{fl}_phase', row=None, row_ord=None, bs=BASELINES, ch_fu=ucats, chs=['line']) # TODO ucats???
+    # repeat_plot(df, f'{fl}_phase', hs=HS_ALL, row=None, bs=BASELINES) # -----------------------------------------
+    repeat_plot(df, f'{fl}_phase', hs=HS_CUM, row=None, bs=BASELINES)
+    repeat_plot(df, f'{fl}_phase', hs=HS_JOINT, row=None, bs=BASELINES)
+    repeat_plot(df, f'{fl}_phase', hs=['phase'], row=None, bs=BASELINES)
+    repeat_plot(df, f'{fl}_phase', hs=[], row=None, bs=BASELINES, dg=None)
+    repeat_plot(df, f'{fl}_workload_delta3', y='Workload increase', row=None, hs=HS_CUM, col=None)
+    repeat_plot(df, f'{fl}_workload_delta3', y='Workload increase', row=None, hs=['phase'], col=None)
+    repeat_plot(df, f'{fl}_workload_delta9', y='Workload increase', hs=HS_CUM, col=None)
+    repeat_plot(df, f'{fl}_workload_delta9', y='Workload increase', hs=['phase'], col=None)
+    repeat_plot(df, f'{fl}_Runtime3', y='Runtime', row=None, hs=HS_CUM, col=None)
+    repeat_plot(df, f'{fl}_Runtime3', y='Runtime', row=None, hs=['phase'], col=None)
+    repeat_plot(df, f'{fl}_Runtime9', y='Runtime', hs=HS_CUM, col=None)
+    repeat_plot(df, f'{fl}_Runtime9', y='Runtime', hs=['phase'], col=None)
+    repeat_plot(df, f'{fl}_Walltime3', y='Walltime', row=None, hs=HS_CUM, col=None)
+    repeat_plot(df, f'{fl}_Walltime3', y='Walltime', row=None, hs=['phase'], col=None)
+    repeat_plot(df, f'{fl}_Walltime9', y='Walltime', hs=HS_CUM, col=None)
+    repeat_plot(df, f'{fl}_Walltime9', y='Walltime', hs=['phase'], col=None)
 
 
-def generalised_sngl_ph(df: pd.DataFrame, fl: str):
-    generalised(df, f'{fl}_phase', hs=HS_SNGL, chs=['bar', 'box', 'violin'], ch_fu=cats, widen_fu=widen_phases, bs=[0.71, 0.617, 0.359], row='phase')
-    generalised(df, f'{fl}_Runtime', 'Runtime', hs=HS_SNGL, chs=['scatter'], ch_fu=rels, widen_fu=widen_phases, row='phase', xl='[s]')
-    generalised(df, f'{fl}_workload', 'workload', hs=HS_SNGL, chs=['scatter'], ch_fu=rels, widen_fu=widen_phases, row='phase')
+def joint_plts_auto_agg_5D(df: pd.DataFrame, fl: str='joint'): # OK
+    '''x=h, y=IoU, col=set, h=HS_CUM/phase/None, row=phase/None; bar (viol, box)'''
+    print('joint_plts_auto_agg_5D')
+    repeat_plot(df, f'{fl}_phase9', hs=HS_CUM, bs=BASELINES) # 9
+    repeat_plot(df, f'{fl}_phase3', hs=HS_CUM, row=None, bs=BASELINES) # 3
+    # repeat_plot(df, f'{fl}_phase', bs=BASELINES) # not cum
+    repeat_plot(df, f'{fl}_phase9', hs=['phase'], bs=BASELINES) # 9
+    repeat_plot(df, f'{fl}_phase3', hs=['phase'], row=None,bs=BASELINES) # 3
+    repeat_plot(df, f'{fl}_phase9', hs=[], bs=BASELINES, dg=None) # 9
+    repeat_plot(df, f'{fl}_phase3', hs=[], row=None,bs=BASELINES, dg=None) # 3
+
+    
+    print(df['sub'].unique())
+    dfs = df[~df['sub'].isna()]
+    dfs['sub'] = pd.Categorical(dfs['sub'], categories=['mix', 'composite', '15', '25', '35', '100'], ordered=True)
+    print(dfs['sub'].unique())
+    repeat_plot(dfs, f'{fl}_phase9', x='hh', hs=['sub'], bs=BASELINES, dg=False)
+    repeat_plot(df, f'{fl}_phase9b', x='hh', hs=['sub'], bs=BASELINES, dg=False)
+    repeat_plot(df, f'{fl}_phase9', x='hh', hs=['sub_mult'], bs=BASELINES, dg=False)
+    hg = HPARAM_COLS_BASE_CAT.copy()
+    hg.remove('sub')
+    repeat_plot(df, f'{fl}_phase9', x='hh', hs=hg, bs=BASELINES, dg=False)
+
+
+def joint_plts_manual_agg_4D(df: pd.DataFrame, fl: str='joint'): # OK; Q3 rather pointless
+    '''x=Workload/Walltime, y=IoU, col=set, h=HS_JOINT; pt-line'''
+    print('joint_plts_manual_agg_4D')
+    for h in HS_JOINT:
+        plot_df_iou = df.groupby(by=[h, 'phase', 'test set'], as_index=False).agg(IoU=('IoU', 'mean')) # IoU by ph, set, key
+        plot_df_walltime = df.groupby(by=[h, 'phase'], as_index=False).agg(Walltime=('Walltime', 'mean')) # Walltime by ph, key
+        plot_df_workload = df.groupby(by=[h, 'phase'], as_index=False).agg(Workload=('Workload', 'mean')) # Workload by ph, key
+        plot_df_walltime = pd.merge(left=plot_df_iou, right=plot_df_walltime, on=[h, 'phase'])
+        plot_df_workload = pd.merge(left=plot_df_iou, right=plot_df_workload, on=[h, 'phase'])
+        repeat_plot(plot_df_walltime, f'{fl}_Walltime', 'Walltime', hs=[h], s=h, row=None, chs=['line'], ch_fu=rels, xl='[s]')
+        # repeat_plot(plot_df_walltime, f'{fl}_Walltime', 'Walltime', hs=[h], s=h, row=None, chs=['line'], ch_fu=line, xl='[s]') # misleading CI per IoU only
+        repeat_plot(plot_df_workload, f'{fl}_Workload', 'Workload', hs=[h], s=h, row=None, chs=['line'], ch_fu=rels)
+        # repeat_plot(plot_df_workload, f'{fl}_Workload', 'Workload', hs=[h], s=h, row=None, chs=['line'], ch_fu=line) # misleading CI per IoU only
+        plot_df_iou = df.groupby(by=[h, 'phase', 'test set'], as_index=False)['IoU'].agg(IoU=lambda x: x.quantile(0.75)) # IoU by ph, set, key
+        plot_df_walltime = df.groupby(by=[h, 'phase'], as_index=False)['Walltime'].agg(Walltime=lambda x: x.quantile(0.75)) # Walltime by ph, key
+        plot_df_workload = df.groupby(by=[h, 'phase'], as_index=False)['Workload'].agg(Workload=lambda x: x.quantile(0.75)) # Workload by ph, key
+        plot_df_walltime = pd.merge(left=plot_df_iou, right=plot_df_walltime, on=[h, 'phase'])
+        plot_df_workload = pd.merge(left=plot_df_iou, right=plot_df_workload, on=[h, 'phase'])
+        repeat_plot(plot_df_walltime, f'{fl}_WalltimeQ3', 'Walltime', hs=[h], s=h, row=None, chs=['line'], ch_fu=rels, xl='[s]')
+        repeat_plot(plot_df_workload, f'{fl}_WorkloadQ3', 'Workload', hs=[h], s=h, row=None, chs=['line'], ch_fu=rels)
+
+
+def joint_plts_no_agg_4D(df: pd.DataFrame, fl: str='joint'): # OK
+    '''x=Workload/Walltime, y=IoU, col=set, h=HS_JOINT; scatter'''
+    print('joint_plts_no_agg_4D')
+    repeat_plot(df, f'{fl}_Walltime3', 'Walltime', hs=HS_JOINT+HS_CUM, row=None, chs=['scatter'], ch_fu=rels, xl='[s]') # HS_ALL not
+    repeat_plot(df, f'{fl}_Workload3', 'Workload', hs=HS_JOINT+HS_CUM, row=None, chs=['scatter'], ch_fu=rels) # HS_ALL not
+
+
+def joint_plts_no_agg_5D(df: pd.DataFrame, fl: str='joint'): # OK
+    '''x=Workload/Walltime, y=IoU, col=set, h=HS_SNGL, row=phase; scatter'''
+    print('joint_plts_no_agg_5D')
+    repeat_plot(df, f'{fl}_Walltime9', 'Walltime', hs=HS_JOINT+HS_CUM, chs=['scatter'], ch_fu=rels, xl='[s]') # HS_ALL not
+    repeat_plot(df, f'{fl}_Workload9', 'Workload', hs=HS_JOINT+HS_CUM, chs=['scatter'], ch_fu=rels) # HS_ALL not
+
+
+def ph1_plts_auto_agg_5D(df: pd.DataFrame, fl: str='ph1'): # OK
+    '''x=h, y=IoU, col=set, h=HS_JOINT, row=phase; bar (viol, box)'''
+    print('ph1_plts_auto_agg_5D')
+    repeat_plot(df, f'{fl}_phase', x='h', hs=HS_SNGL, row_ord=[1], bs=BASELINES, dg=False) # x by h, xord by h; no longer broken
+    repeat_plot(df, f'{fl}_phase', x='hh', hs=HS_SNGL, row_ord=[1], bs=BASELINES, dg=False) # self-self x-h
+    repeat_plot(df, f'{fl}_phase', hs=HS_SNGL, row_ord=[1], bs=BASELINES) # redundant but OK; no, this was incorrect! now fine!!
+    repeat_plot(df, f'{fl}_phase', row=None, hs=['phase'], bs=BASELINES) # no h
+    repeat_plot(df, f'{fl}_phase', row=None, hs=[], bs=BASELINES, dg=None) # no h
+
+
+def ph1_plts_auto_agg_5D_hps(df: pd.DataFrame, fl: str='ph1'): # TODO Hparams more
+    '''x=h, y=IoU, col=set, h=HS_JOINT, row=phase; bar (viol, box)'''
+    print('ph1_plts_auto_agg_5D_hps')
+    # repeat_plot(df, f'{fl}_phase', x='h', hs=['sub', 'val', 'train'], row_ord=[1], bs=BASELINES) # x by h, xord by h
+    dfs = df[~df['sub'].isna()]
+    if fl != 'ph1':
+        dfs['sub'] = pd.Categorical(dfs['sub'], categories=['mix', 'composite', '15', '25', '35', '100'], ordered=True)
+    repeat_plot(dfs, f'{fl}_phase', x='hh', hs=['sub'], row_ord=[1], bs=BASELINES, dg=False) # self-self x-h
+    repeat_plot(df, f'{fl}_phase', x='hh', hs=['val', 'train'], row_ord=[1], bs=BASELINES, dg=False) # self-self x-h
+    repeat_plot(df, f'{fl}_phase', x='hh', hs=HPARAM_COLS_BASE_CAT, row_ord=[1], bs=BASELINES, dg=False) # self-self x-h
+    repeat_plot(df, f'{fl}_phase', x='hh', hs=['train_val'], row_ord=[1], bs=BASELINES, dg=False) # self-self x-h ????????????????
+    # repeat_plot(df, f'{fl}_phase', hs=HPARAM_COLS_BASE_CAT, row_ord=[1], bs=BASELINES) # redundant but OK
+
+
+def ph1_plts_no_agg_5D(df: pd.DataFrame, fl: str='ph1'): # OK
+    '''x=Workload/Walltime, y=IoU, col=None/h, h=HS_JOINT, row=phase; bar (viol, box)'''
+    print('ph1_plts_no_agg_5D')
+    repeat_plot(df, f'{fl}_Workload', 'Workload', hs=[], col=None, row_ord=[1], ch_fu=rels, chs=['scatter'], aggs=True)
+    repeat_plot(df, f'{fl}_Workload', 'Workload', hs=[], row_ord=[1], ch_fu=rels, chs=['scatter'], aggs=True)
+    repeat_plot(df, f'{fl}_Workload', 'Workload', hs=HS_SNGL, col=None, row_ord=[1], ch_fu=rels, chs=['scatter'])
+    df = df[df['test set'] == 'SYNT'] # no tripling
+    hhhh = HS_SNGL if 'SYNT use' in df.columns else HS_JOINT + ['train_val']
+    repeat_plot(df, f'{fl}_Workload', y='Workload', hs=hhhh, col=None, row_ord=[1], aggs=True)
+    repeat_plot(df, f'{fl}_Workload', x='h', y='Workload', hs=hhhh, col=None, row_ord=[1], aggs=True, dg=False)
+    repeat_plot(df, f'{fl}_Workload', x='hh', y='Workload', hs=hhhh, col=None, row_ord=[1], aggs=True, dg=False)
+
+
+def concats_5D(df: pd.DataFrame, fl: str): # next
+    '''x=h, y=IoU, col=set, h=HS_JOINT, row=phase; bar (viol, box)'''
+    repeat_plot(df, f'{fl}_phase', row=None, hs=['phase'], bs=BASELINES) # 3
+    repeat_plot(df, f'{fl}_phase', hs=[], bs=BASELINES, dg=None) # 9
+
+
+def all_joint123():
+    ph123 = total_df_treatment(FILES['joint'], joint=True)
+    if SAVING:
+        ph123.to_csv(f'{SAVEDIR}/ph123.csv')
+    print(ph123.columns)
+    joint_plts_auto_agg_4D(ph123)
+    joint_plts_manual_agg_4D(ph123)
+    joint_plts_auto_agg_5D(ph123)
+    joint_plts_no_agg_4D(ph123)
+    joint_plts_no_agg_5D(ph123)
+    print('done joint')
+
+
+def all_concat(): # TODO treatment nie działa
+    cnc = total_df_treatment(FILES['concat'], cnc=True)
+
+
+def all_1st_phase():
+    '''ph1: joit and sngl'''
+    ph1 = total_df_treatment(FILES['ph1'], sngl_ph_nr=1)
+    if SAVING:
+        ph1.to_csv(f'{SAVEDIR}/ph1.csv')
+    ph1_plts_auto_agg_5D(ph1)
+    ph1_plts_auto_agg_5D_hps(ph1)
+    ph1_plts_no_agg_5D(ph1)
+
+    ph1 = total_df_treatment(FILES['joint'], joint=True, cut_to_ph1=True)
+    if SAVING:
+        ph1.to_csv(f'{SAVEDIR}/ph1_joint.csv')
+    ph1_plts_auto_agg_5D(ph1, 'ph1_joint')
+    ph1_plts_auto_agg_5D_hps(ph1, 'ph1_joint')
+    ph1_plts_no_agg_5D(ph1, 'ph1_joint')
+    print('done 1st phase')
 
 
 def main():
-    conc123 = limit_to_successful(round_sngl_ph(pd.read_csv(FILES['concat'])), cnc=True)
-    ph123 = pd.read_csv(FILES['joint'])
-    ph1 = limit_to_successful(round_sngl_ph(pd.read_csv(FILES['ph1'])))
-    ph2 = limit_to_successful(round_sngl_ph(pd.read_csv(FILES['ph2'])))
-    ph3 = limit_to_successful(round_sngl_ph(pd.read_csv(FILES['ph3'])))
-
-    
-    ph123 = process_diversity_workload(ph123)
-    generalised_joints_4D(ph123, 'joint')
-    generalised_sngl_ph(ph1, 'ph1')
-    generalised_sngl_ph(ph2, 'ph2')
-    generalised_sngl_ph(ph3, 'ph3')
-    generalised_concats_4D(conc123, 'concat')
-
-
-    # print(widen_phases_id(ph123, y='Workload', h=['s_lvl']).head())
-    # g = sns.catplot(
-    #     data=widen_phases_id(ph123, y='Workload', h=['s_lvl']),
-    #     x='phase',
-    #     y='Workload',
-    #     hue='s_lvl',
-    #     col='test set',
-    #     kind='bar'
-    # )
-    # plt.show()
+    all_joint123()
+    # all_concat()
+    all_1st_phase()
 
 
 if __name__ == '__main__':
-    main()
+    # main()
+    jnt = multiprocessing.Process(target=all_joint123)
+    jnt.start()
+    all_1st_phase()
+    jnt.join()
+    print('done')

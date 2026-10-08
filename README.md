@@ -1,7 +1,16 @@
-semi-automatically labelled synthetic distributed rooftop photovoltaic panel dataset generator
+# PV SEG DA
 
-including bits of usability valiadation
+Domain adaptation of a semantic image segmentation model for solar panels with semi-synthetic automatically-labelled data in the setup of urban large-scale aerial imagery
 
-2026
+## Contents
 
-refs: SolarScope
+- [DATA](DATA): data generation app
+- [FT](FT): training components
+- [jobs](jobs): associated SLURM scripts
+- [CSV](CSV): analysis and visualisation of the obtained results
+
+
+## Ack
+code ref: [SolarScope](https://github.com/Peijin-Jiang/SolarScope)
+
+GUT, 2026
